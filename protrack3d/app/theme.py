@@ -64,6 +64,12 @@ QComboBox::drop-down {{ border: none; width: 22px; }}
 QComboBox QAbstractItemView {{ background: {surface}; border: 1px solid {border}; selection-background-color: {accent_soft};
     selection-color: {text}; padding: 4px; }}
 QPlainTextEdit#log {{ font-family: Menlo, Consolas, 'DejaVu Sans Mono', monospace; font-size: 12px; background: {surface2}; }}
+QRadioButton {{ spacing: 8px; }}
+QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px; border: 1px solid {border}; background: {surface}; }}
+QRadioButton::indicator:checked {{ width: 6px; height: 6px; border: 5px solid {accent}; background: {on_accent}; }}
+QRadioButton::indicator:disabled {{ background: {surface2}; }}
+QRadioButton:disabled {{ color: {faint}; }}
+QDialog {{ background: {bg}; }}
 QCheckBox {{ spacing: 7px; }}
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px; border: 1px solid {border}; background: {surface}; }}
 QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; image: url({check}); }}

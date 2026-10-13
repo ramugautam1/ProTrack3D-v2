@@ -1,5 +1,6 @@
 """Viewer: scroll through z and time with the segmentation mask or the tracked object IDs drawn over the image."""
 import csv
+import gc
 import os
 
 import numpy as np
@@ -10,7 +11,8 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QSlider, QVBoxLayout, QWid
 from .. import stages
 from ..segmentation import image_base, read_image_info, segmentation_folder
 from . import icons
-from .contrast import ContrastPanel, Levels
+from .contrast import ContrastPanel, Levels, SaveDialog
+from .jobs import Job
 from .pages import IMAGE_FILTERS, Page
 from .palette import id_colours
 from .widgets import Card, PathField, button, text
@@ -83,6 +85,14 @@ class Stack:
     @property
     def channels(self):
         return len(self.channel_names)
+
+    def all_levels(self):
+        """The display range of every channel, as each is (or would be) shown."""
+        shown, ranges = self.channel, []
+        for self.channel in range(self.channels):
+            ranges.append(self.levels())
+        self.channel = shown
+        return ranges
 
     def levels(self):
         """Display range of the current channel. It starts fitted to the middle plane and is the user's to change."""
@@ -207,6 +217,9 @@ class ViewerPage(Page):
         self.canvas.scrolled.connect(lambda step: self.z_slider.setValue(self.z_slider.value() + step))
         self.contrast = ContrastPanel(ctx.theme)
         self.contrast.changed.connect(self.render)
+        self.contrast.save_requested.connect(self.save_adjusted)
+        self.reopen = None  # (job, image) while the image on screen is being replaced
+        ctx.jobs.finished.connect(self.save_finished)
         middle = QHBoxLayout()
         middle.setSpacing(16)
         middle.addWidget(self.canvas, 1)
@@ -277,6 +290,44 @@ class ViewerPage(Page):
         slider.setRange(0, 0)
         slider.valueChanged.connect(self.render)
         return slider, text(name, 'label')
+
+    def save_adjusted(self):
+        """Save the image with its brightness and contrast applied, as a copy or in place of the original."""
+        if not self.stack or self.reopen:
+            return
+        image, levels = self.stack.path, self.stack.all_levels()
+        whole = self.stack.plane(0, 0).dtype
+        top = float(np.iinfo(whole).max) if np.issubdtype(whole, np.integer) else 1.0
+        ranges = [(lv.low, lv.high) for lv in levels]
+        dialog = SaveDialog(self, image, ranges, top)
+        if not dialog.exec():
+            return
+        args = ['rescale', image, '--out', dialog.target]
+        for low, high in ranges:
+            args += ['--range', repr(float(low)), repr(float(high))]
+        job = Job(f'Save image  ·  {os.path.basename(dialog.target)}', args, ['saving image'], folder=os.path.dirname(dialog.target))
+        if dialog.target == image:  # the file must not be open here while it is replaced
+            self.reopen = (job, image)
+            self.stack = None
+            gc.collect()
+            self.canvas.pixmap = None
+            self.canvas.update()
+            self.contrast.display(None, None, None)
+            self.source.set_detail('Being replaced…')
+        self.ctx.submit(job, announce=False)
+        self.ctx.toast('Saving ' + os.path.basename(dialog.target))
+
+    def save_finished(self, job):
+        if not self.reopen or job is not self.reopen[0]:
+            return
+        image, self.reopen = self.reopen[1], None
+        if os.path.normpath(self.source.path or '.') != os.path.normpath(image):
+            return  # another image was opened in the meantime
+        self.open(image)
+        if job.state == 'done' and self.stack:  # the saved values already hold the contrast: show them as they are
+            for levels in self.stack.all_levels():
+                levels.reset()
+            self.render()
 
     def show_contrast(self, shown):
         QSettings().setValue('viewer_contrast', 'true' if shown else 'false')

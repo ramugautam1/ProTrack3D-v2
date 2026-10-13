@@ -1,11 +1,14 @@
 """Brightness and contrast for the viewer, after ImageJ's B&C window: a histogram with the display range drawn
 over it, Minimum / Maximum / Brightness / Contrast sliders, Auto and Reset. Only the display changes, never the data."""
+import os
+
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QDoubleValidator, QPainter, QPen
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLineEdit, QSlider, QWidget
+from PySide6.QtWidgets import (QButtonGroup, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
+                               QRadioButton, QSlider, QVBoxLayout, QWidget)
 
-from .widgets import Card, button, text
+from .widgets import Card, ElidedLabel, button, text
 
 STEPS = 1000  # slider positions
 BINS = 256
@@ -129,6 +132,7 @@ class Histogram(QWidget):
 
 class ContrastPanel(Card):
     changed = Signal()  # the display range was changed here
+    save_requested = Signal()
 
     SLIDERS = [('Minimum', 'set_minimum', 'Everything at or below this value is black'),
                ('Maximum', 'set_maximum', 'Everything at or above this value is white'),
@@ -166,10 +170,13 @@ class ContrastPanel(Card):
         auto.clicked.connect(self._auto)
         reset = button('Reset', tip='Show the whole range of the data')
         reset.clicked.connect(self._reset)
+        save = button('Save image…', tip='Save the image with this brightness and contrast, as a copy or in place of the original')
+        save.clicked.connect(self.save_requested)
         buttons.addWidget(auto)
         buttons.addWidget(reset)
         buttons.addStretch(1)
         self.box.addLayout(buttons)
+        self.box.addWidget(save)
         self.box.addStretch(1)
         self.setEnabled(False)
 
@@ -232,3 +239,109 @@ class ContrastPanel(Card):
         if self.levels is not None:
             self.levels.reset()
             self.changed.emit()
+
+
+class SaveDialog(QDialog):
+    """Asks how to save an image with its brightness and contrast applied: as a copy under a new name, or in place
+    of the original. `target` holds the chosen file when the dialog is accepted."""
+
+    def __init__(self, parent, image, ranges, top):
+        super().__init__(parent)
+        self.setWindowTitle('Save image')
+        self.setFixedWidth(560)
+        self.image, self.target = image, None
+        stem, extension = os.path.splitext(os.path.basename(image))
+        self.fixed = extension.lower() == '.czi'  # a .czi cannot be written, so there is only a copy, as .tif
+        self.extension = '.nii' if extension.lower() == '.nii' else '.tif'
+        self.folder = os.path.dirname(image)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 18)
+        box.setSpacing(12)
+        box.addWidget(text('Save with this brightness and contrast', 'h2'))
+        if len(ranges) == 1:
+            what = f'{ranges[0][0]:g} becomes 0 and {ranges[0][1]:g} becomes {top:g}'
+        else:
+            what = 'in each channel the range it is shown with becomes 0 to ' + f'{top:g}'
+        box.addWidget(text(f'The pixel values are rescaled: {what}. Everything outside is clipped. '
+                           'All timepoints and slices are saved.', 'sub', wrap=True))
+        self.copy, self.replace = QRadioButton('Save a copy'), QRadioButton('Replace the original')
+        group = QButtonGroup(self)
+        for choice in (self.copy, self.replace):
+            group.addButton(choice)
+            box.addWidget(choice)
+        self.copy.setChecked(True)
+        if self.fixed:
+            self.replace.setEnabled(False)
+            self.replace.setToolTip('A .czi file cannot be rewritten. The copy is saved as a .tif.')
+        line = QHBoxLayout()
+        line.addWidget(text('Name', 'label'))
+        self.name = QLineEdit(stem + '_BC' + self.extension)
+        line.addWidget(self.name, 1)
+        box.addLayout(line)
+        line = QHBoxLayout()
+        self.where = ElidedLabel('', 'hint')
+        folder = button('Change folder…', 'ghost')
+        folder.clicked.connect(self.choose_folder)
+        self.folder_button = folder
+        line.addWidget(self.where, 1)
+        line.addWidget(folder)
+        box.addLayout(line)
+        self.warning = text('Replacing cannot be undone. The measured intensities in this file are lost, and intensity '
+                            'measurements made from it afterwards will not match the raw data.', 'error', wrap=True)
+        box.addWidget(self.warning)
+        self.problem = text('', 'error', wrap=True)
+        box.addWidget(self.problem)
+        line = QHBoxLayout()
+        line.addStretch(1)
+        cancel = button('Cancel')
+        cancel.clicked.connect(self.reject)
+        self.save = button('Save', 'primary')
+        self.save.clicked.connect(self.confirm)
+        self.save.setDefault(True)
+        line.addWidget(cancel)
+        line.addWidget(self.save)
+        box.addLayout(line)
+        self.replace.toggled.connect(self.choice_changed)
+        self.choice_changed()
+        self.name.setFocus()  # ready to type over the suggested name, keeping the extension
+        self.name.setSelection(0, len(stem) + 3)
+
+    def choice_changed(self, *_):
+        replacing = self.replace.isChecked()
+        if replacing:
+            self.typed = self.name.text()
+            self.name.setText(os.path.basename(self.image))
+        elif getattr(self, 'typed', None) is not None:
+            self.name.setText(self.typed)
+        self.name.setEnabled(not replacing)
+        self.folder_button.setVisible(not replacing)
+        self.warning.setVisible(replacing)
+        self.save.setText('Replace' if replacing else 'Save')
+        self.problem.setText('')
+        self.where.setText('in ' + (os.path.dirname(self.image) if replacing else self.folder))
+        self.adjustSize()  # the warning comes and goes
+
+    def choose_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Choose where to save the copy', self.folder)
+        if folder:
+            self.folder = folder
+            self.choice_changed()
+
+    def confirm(self):
+        if self.replace.isChecked():
+            self.target = self.image
+            return self.accept()
+        name = self.name.text().strip()
+        if not name or any(mark in name for mark in '/\\:*?"<>|'):
+            return self.problem.setText('Give the copy a name without any of  / \\ : * ? " < > |')
+        if not name.lower().endswith(('.nii',) if self.extension == '.nii' else ('.tif', '.tiff')):
+            name += self.extension
+            self.name.setText(name)
+        target = os.path.join(self.folder, name)
+        if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(self.image)):
+            return self.problem.setText('That is the name of the original. Choose "Replace the original" to overwrite it.')
+        if os.path.exists(target) and QMessageBox.question(
+                self, 'Save image', f'{name} already exists in that folder. Replace it?') != QMessageBox.Yes:
+            return None
+        self.target = target
+        self.accept()

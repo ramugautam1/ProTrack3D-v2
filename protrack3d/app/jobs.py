@@ -10,7 +10,7 @@ from ..events import MARKER
 from ..paths import FROZEN, REPO_ROOT
 
 STAGE_LABELS = {'segmentation': 'Segmentation', 'tracking': 'Tracking', 'analysis': 'Analysis', 'family tree': 'Family tree',
-                'training': 'Training', 'download': 'Download', 'update': 'Update', 'preparation': 'Preparation',
+                'training': 'Training', 'download': 'Download', 'update': 'Update', 'saving image': 'Saving', 'preparation': 'Preparation',
                 'quantification': 'Measuring', 'boundary analysis': 'Boundary analysis'}
 
 
