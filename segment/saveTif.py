@@ -3,12 +3,13 @@ import os
 import tifffile
 
 
-def saveTif(seg_tif, image):  # image is actually the path of original image
+def saveTif(seg_tif, image, out_dir=None):  # image is actually the path of original image
+    # out_dir: folder for the mask; next to the original image when not given
     # If singleton T, drop it -> (X, Y, Z)
     if seg_tif.ndim == 4 and seg_tif.shape[-1] == 1:
         seg_tif = seg_tif[..., 0]
 
-    orig_dir = os.path.dirname(image)
+    orig_dir = out_dir or os.path.dirname(image)
     orig_base = os.path.splitext(os.path.basename(image))[0]
     seg_tif_path = os.path.join(orig_dir, orig_base + "_SEG.tif")
 

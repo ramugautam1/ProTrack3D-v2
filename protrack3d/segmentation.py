@@ -186,8 +186,8 @@ def segment_image(image, model_path, out_dir=None, start=1, end=None, device=Non
     nib.save(nib.Nifti1Image(labeled, np.eye(4)), os.path.join(folder, 'CombinedSO', 'CombinedSO.nii'))
     seg_tif = None
     if save_seg_tif:
-        saveTif(labeled, image)
-        seg_tif = os.path.join(os.path.dirname(image), image_base(image) + '_SEG.tif')
+        saveTif(labeled, image, out_dir)
+        seg_tif = os.path.join(out_dir or os.path.dirname(image), image_base(image) + '_SEG.tif')
     if n_t == 1:
         import skimage.measure
         single = np.uint16(skimage.measure.label(labeled.astype(bool), connectivity=1))
