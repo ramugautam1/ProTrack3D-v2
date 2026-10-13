@@ -39,6 +39,12 @@ def main(argv=None):
     p = sub.add_parser('update', help='update ProTrack3D to the newest published version')
     p.add_argument('--check', action='store_true', help='only say whether a newer version exists')
 
+    p = sub.add_parser('rescale', help='save an image with a brightness and contrast range applied to its pixel values')
+    p.add_argument('image')
+    p.add_argument('--out', required=True, help='file to write; the image itself to replace it')
+    p.add_argument('--range', dest='ranges', nargs=2, type=float, action='append', required=True, metavar=('LOW', 'HIGH'),
+                   help='LOW becomes 0 and HIGH the largest value of the image type; give it once per channel')
+
     p = sub.add_parser('import-model', help='turn a converted TensorFlow checkpoint (.npz) into a model file')
     p.add_argument('npz')
 
@@ -176,6 +182,9 @@ def run(args, reporter):
         from .convert_tf import import_npz
         path, meta = import_npz(args.npz)
         reporter.result(model=path, **meta)
+    elif args.command == 'rescale':
+        from .rescale import rescale
+        rescale(args.image, args.out, args.ranges, reporter)
     elif args.command == 'segment':
         segment_image(args.image, _model_path(args.model), args.out, args.start, args.end, device=args.device,
                       save_seg_tif=not args.no_seg_tif, reporter=reporter)

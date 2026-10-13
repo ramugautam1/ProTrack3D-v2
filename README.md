@@ -107,6 +107,8 @@ Your original image is never changed.
 
 The panel on the right is brightness and contrast, the way ImageJ does it. The picture on top is the histogram of the slice you are looking at; the line over it shows what is drawn black and what is drawn white. Move **Minimum** and **Maximum**, or **Brightness** and **Contrast**, or type the two numbers. **Auto** fits the range to the slice; press it again to cut deeper. **Reset** shows the whole range. Each channel keeps its own setting. This only changes what you see. Your data and the measurements are not changed.
 
+**Save image…** writes the image with that brightness and contrast put into the pixel values (what ImageJ calls Apply). It asks: a copy, or replace the original. A copy gets the name of the image with `_BC` added; change it if you like. All timepoints and slices are saved. A `.czi` is saved as a `.tif` copy. Careful with Replace: the measured intensities in that file are gone for good, so do not replace an image you still want to measure.
+
 **Lineage.** Drop the `_TrackingOutput` folder. Every object is a row. Dots are timepoints. Blue links are splits. Red dashed links are merges. Click a row to see its family. Double-click to jump to that object in the Viewer. Zoom with pinch or Ctrl-scroll.
 
 **Family tree.** Two kinds:
