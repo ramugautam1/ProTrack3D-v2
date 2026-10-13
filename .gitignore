@@ -1,0 +1,6 @@
+__pycache__/
+.DS_Store
+models/
+packaging/build/
+packaging/dist/
+packaging/build.log

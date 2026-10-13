@@ -1,0 +1,429 @@
+import pandas as pd
+import math
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import os
+import matplotlib.colors as mc
+import nibabel as nib
+from scipy import ndimage
+
+def niftiread(arg):
+    return np.asarray(nib.load(arg).dataobj).astype(np.float32).squeeze()
+
+def keep_values(matrix, idlist):
+    newMatrix = np.copy(matrix)
+    newMatrix[~np.isin(newMatrix, idlist)] = 0
+
+    return newMatrix
+
+
+def objectBoxes(tracked):
+    """Smallest and largest x, y and z of every object id over the whole movie, from one pass through the timepoints."""
+    boxes = {}
+    for t in range(tracked.shape[-1]):
+        labels = np.asarray(tracked.dataobj[..., t]).astype(np.int64)
+        for i, box in enumerate(ndimage.find_objects(labels)):
+            if box is None:
+                continue
+            found = [(axis.start, axis.stop - 1) for axis in box]
+            known = boxes.get(i + 1)
+            boxes[i + 1] = found if known is None else [(min(a[0], b[0]), max(a[1], b[1])) for a, b in zip(known, found)]
+    return boxes
+
+
+def familyExtent(boxes, idlist):
+    """The x, y and z range covered by a family: what getExtremeIndices gave for the whole movie with only these ids kept."""
+    found = [boxes[int(i)] for i in idlist if i == i and int(i) in boxes]
+    return [(np.int64(min(b[axis][0] for b in found)), np.int64(max(b[axis][1] for b in found))) for axis in range(3)]
+
+
+def getExtremeIndices(arr):
+    nonZeroIndices = np.nonzero(arr)
+    n_dim = arr.ndim
+    dims = []
+    for i in range(0, n_dim):
+        dims.append((np.min(nonZeroIndices[i]), np.max(nonZeroIndices[i])))
+    # print(dims)
+    return dims
+
+
+def plot_3d_matrix(matrix, idlist, lims, colors, ax):
+    for i, id in enumerate(idlist):
+        x, y, z = np.where(matrix == id)
+        if (len(x) > 2 and len(y) > 2):
+            # print(id)
+            ax.plot_trisurf(x, y, z, color=colors[i%len(colors)], alpha=0.5)
+    ax.set_xlim(99, 151)
+    ax.set_xlim(147, 180)
+    ax.set_xlim(1, 13)
+
+def intersect(a, b):
+    a1, ia = np.unique(a, return_index=True)
+    b1, ib = np.unique(b, return_index=True)
+    aux = np.concatenate((a1, b1))
+    aux.sort()
+    c = aux[:-1][aux[1:] == aux[:-1]]
+    return c
+
+import re
+def range_to_list(input_string):
+    # Remove spaces from the input string
+    input_string = input_string.replace(' ', '')
+
+    ranges = input_string.split(',')
+    result = []
+
+    try:
+        for r in ranges:
+            if '-' in r:
+                start, end = map(int, r.split('-'))
+                result.extend(range(start, end + 1))
+            else:
+                result.append(int(r))
+    except (ValueError, IndexError):
+        print("Invalid Input. Please provide a valid sequence in the format 'start-end' separated by ','." \
+               "\n--------------------------- \nFollow the following Format:\n" \
+               "\tValid input: 1,2,13,62\n" \
+               "\tValid Input: 76\n" \
+               "\tValid Input: 1-29\n" \
+               "\tValid Input: 1-4,23-27, 88-121\n")
+
+    return result
+
+
+
+def generateFamilyTree(excelFile, ftFolder, tidlist):
+
+
+    colors = ["coral", "blue", "brown", "chartreuse", "aquamarine", "cyan", "darkorange", "darkred",
+              "dodgerblue", "firebrick", "forestgreen", "fuchsia", "gold", "green", "hotpink", "indigo",
+              "lime", "magenta", "maroon", "mediumblue", "mediumspringgreen", "navy", "olive", "orange",
+              "orangered",
+              "orchid", "peru", "purple", "red", "royalblue", "saddlebrown", "seagreen", "sienna", "skyblue",
+              "springgreen", "teal", "tomato", "turquoise", "violet", "yellow", "yellowgreen",
+                "burlywood", "cadetblue",
+              "cornflowerblue",
+               "darkcyan", "darkgoldenrod", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+              "darkorchid", "darksalmon", "darkseagreen", "darkslateblue", "darkslategray", "darkturquoise",
+              "darkviolet", "deepskyblue"
+              ]
+
+    trackFolder = os.path.dirname(excelFile)
+
+    saveFolder = ftFolder
+    csvFolder = saveFolder + '/csvFiles'
+    if not os.path.exists(saveFolder):
+        os.makedirs(saveFolder)
+    trackFolder = os.path.dirname(excelFile)
+    if not os.path.exists(csvFolder):
+        os.makedirs(csvFolder)
+
+    # new code
+    existForDF = pd.read_csv(trackFolder + '/Sheet3.csv')
+    existForList = existForDF.to_numpy()
+
+
+    if re.sub(r'[^a-zA-Z0-9 ]', '', tidlist).lower() == 'all':
+        targetIds = [int(i) for i in existForDF['index']]  # every object (the row count alone left out the last one)
+    else:
+        # if '-' in tidlist:
+        targetIds = range_to_list(tidlist)
+        # else:
+        #     targetIds = [int(num) for num in tidlist.split(',')]
+    print('\n=================================================\n')
+    print('Generating Family Trees for IDs: ', '\n\t', targetIds)
+
+
+    # targetIdsdf = pd.read_csv(trackFolder+'/target_IDs.csv')
+    # targetIds = list(targetIdsdf.values.flatten())
+
+    # targetIds = [i for i in range(1 ,100)]
+
+    merge_list = pd.read_csv(trackFolder + '/merge_list.csv')
+
+    split_list = pd.read_csv(trackFolder + '/split_list.csv')
+    # The tracked movie stays on disk; each family reads only the timepoints it draws.
+    tracked = nib.load(trackFolder + '/TrackedCombined.nii')
+    idBoxes = objectBoxes(tracked)
+
+    split_list = split_list[~split_list['Splitted Into'].duplicated(keep='first')]  # Encountered one issue where two different split events resulted into same ID being generated at different timepoints. Look into this.
+
+    ftlst = []
+    mrglst = []
+    alltmin = []
+    alltmax = []
+    allmrglst = []
+    print('\n=================================================\n')
+
+    if not os.path.isdir(ftFolder + '/FamilyTrees_3D'):
+        os.makedirs(ftFolder + '/FamilyTrees_3D')
+    if not os.path.isdir(ftFolder + '/TreeDiagrams'):
+        os.makedirs(ftFolder + '/TreeDiagrams')
+
+    for tid in targetIds:
+        prefix = '0000' if tid < 10 else '000' if tid < 100 else '00' if tid < 1000 else '0' if tid < 10000 else ''
+        print(f'\rProcessing ID {prefix}{tid}', end='', flush=True)
+
+        temp1 = []
+        familyMembers = []
+
+        for ix in range(len(existForList)):
+            if existForList[ix, 0] == tid or existForList[ix, 3] == tid or existForList[ix, 3] in temp1:
+                temp1.append(existForList[ix, 0])
+                familyMembers.append(existForList[ix])
+
+        transposedFamilyMembers = np.transpose(np.array(familyMembers))
+
+        ftlst.append(transposedFamilyMembers.tolist())
+        alltmin.append(min(transposedFamilyMembers[1]))
+        alltmax.append(max(transposedFamilyMembers[2]))
+        famMem = pd.DataFrame(np.array(familyMembers))
+        famMem.columns = ['index', 'timestart', 'timeend', 'parent']
+        famMem.to_csv(csvFolder + '/split_data_tid_' + str(tid) + '.csv')
+
+        all_ids_in_ft_s = np.array(famMem.loc[:, 'index'])
+
+        mrglst_for_ft = merge_list[merge_list['Merged Into'].isin(all_ids_in_ft_s)]['Merged'].tolist()
+        merge_t_for_ft = merge_list[merge_list['Merged Into'].isin(all_ids_in_ft_s)]['Time'].tolist()
+
+        bigmrglst_for_ft = merge_list[merge_list['Merged'].isin(all_ids_in_ft_s)]['Merged Into'].tolist()
+        bigmrg_t_for_ft = merge_list[merge_list['Merged'].isin(all_ids_in_ft_s)]['Time'].tolist()
+
+        #         mrglst_for_ft = merge_list[merge_list['Merged Into'].isin(all_ids_in_ft_s)].values().tolist()
+
+        #         for mrglst_count in len(mrglst_for_ft):
+        #             mrglst_for_ft[mrglst_count].append(existForDF[existForDF['index']==mrglst_for_ft[mrglst_count][1]]['timestart'])
+        fam_m = []
+        for i_, m_ in enumerate(mrglst_for_ft):
+            fam_m.append(existForList[m_ - 1].tolist())
+        mrglst.append(mrglst_for_ft)
+
+        splitlst_for_ft = split_list[(split_list['Splitted'].isin(all_ids_in_ft_s) ) |(split_list['Splitted Into'].isin(all_ids_in_ft_s))]
+
+        #         bigmrglst_for_ft = merge_list[merge_list['Merged Into'].isin(all_ids_in_ft_s)]
+        #         smlmrglst_for_ft = merge_list[merge_list['Merged'].isin(all_ids_in_ft_s)]
+        #         allmrglst_for_ft = pd.concat([bigmrglst_for_ft, smlmrglst_for_ft], ignore_index=True).drop_duplicates()
+
+        allmrglst_for_ft = merge_list[(merge_list['Merged Into'].isin(all_ids_in_ft_s)) | (merge_list['Merged'].isin(all_ids_in_ft_s))]
+
+        allFamilyMembersIncludingSplitAndMerge = pd.concat \
+            ([allmrglst_for_ft['Merged Into'], allmrglst_for_ft['Merged'], famMem['index'],famMem['parent']]).unique()  # added famMem['parent']
+
+        allFamMemExistTimes = existForDF.loc[existForDF['index'].isin(allFamilyMembersIncludingSplitAndMerge)].reset_index(drop=True)
+
+        fig = plt.figure(num=1, clear=True, figsize=(allFamMemExistTimes.timeend.max() + 2,len(allFamMemExistTimes) + 2))
+        ax = plt.subplot()
+        ax.set_ylim(0, len(allFamMemExistTimes) + 2)
+        ax.set_xlim(allFamMemExistTimes.timestart.min()-1, allFamMemExistTimes.timeend.max() + 2)
+        ax.set_xlabel('timepoints (t)', fontsize=20, color='k')
+        ax.set_xticks(np.arange(allFamMemExistTimes.timestart.min(),allFamMemExistTimes.timeend.max()+1))
+        mpl.rc('xtick', labelsize=20)
+        mpl.rc('ytick', labelsize=20)
+        plt.yticks(color='w')
+        plt.xticks(rotation=0, fontsize=15)
+
+
+
+        for i, j in enumerate(allFamMemExistTimes['index']):
+            for k in range(allFamMemExistTimes['timestart'][i], allFamMemExistTimes['timeend'][i ] +1):
+                ax.scatter(k, i + 1, color=colors[j % len(colors)], s=200)
+            ax.text(allFamMemExistTimes['timeend'][i ] , i+ 1.25, str(j), fontsize=20 if i == 0 else 20)
+            plt.plot([allFamMemExistTimes['timestart'][i], allFamMemExistTimes['timeend'][i]], [i + 1, i + 1],
+                     color="green")
+
+        for i, row in splitlst_for_ft.iterrows():
+            sd, si, tt = row['Splitted'], row['Splitted Into'], row['Time']
+            plt.plot([tt - 1, tt], [list(allFamMemExistTimes['index']).index(sd) + 1,
+                                    list(allFamMemExistTimes['index']).index(si) + 1], color="darkblue")
+
+        for i, row in allmrglst_for_ft.iterrows():
+            mi, md, tt = row['Merged Into'], row['Merged'], row['Time']
+            plt.plot([tt - 1, tt], [list(allFamMemExistTimes['index']).index(md) + 1,
+                                list(allFamMemExistTimes['index']).index(mi) + 1], color='red', linestyle='--')
+
+        filename = saveFolder + '/TreeDiagrams/' + 'FT_ID_' + prefix + str(tid) + '.png'
+        plt.savefig(filename)
+        # fig.clear()
+
+        plt.close()
+
+
+        idlist=allFamilyMembersIncludingSplitAndMerge
+        parentId = tid
+        indicesRange = familyExtent(idBoxes, idlist)
+
+        tmax = allFamMemExistTimes['timeend'].max()
+        tmin = allFamMemExistTimes['timestart'].min()
+
+        totalTimes = tmax - tmin + 3
+        over4xN = 1 if totalTimes%4 > 0 else 0
+
+        figsize = (20, int(np.ceil(totalTimes / 5)) * 4)
+        fig = plt.figure(num=1, clear=True, figsize=figsize, constrained_layout=True)
+        fig.patch.set_facecolor('white')
+        fig.suptitle(str(tid))
+
+        list_coordinates_all = []
+        for i in range(max(tmin-2, 0), min(tmax+1,tracked.shape[-1])):
+            mtrx = keep_values(np.asarray(tracked.dataobj[..., i]).astype(np.float32), idlist)
+            axtitle = []
+            subplotloc = int(np.ceil(totalTimes / 5))
+            ax = fig.add_subplot(subplotloc, 5, i - tmin + 3, projection='3d')
+            # plot_3d_matrix(matrix, idlist, indicesRange, colors, ax)
+
+            ax.xaxis.set_tick_params(labelbottom=True, labelsize=12)
+            ax.yaxis.set_tick_params(labelleft=True, labelsize=12)
+            ax.zaxis.set_tick_params(labelright=False)
+            ax.zaxis.set_ticklabels([])
+
+            ax.set_xlabel('X', fontsize=12)  # Set x-axis label and font size
+            ax.set_ylabel('Y', fontsize=12)  # Set y-axis label and font size
+            ax.set_zlabel('Z', fontsize=12)  # Set y-axis label and font size
+
+
+            axtitle = list(np.unique(mtrx))
+            axtitle.append('t=' + str(i + 1))
+            ax.set_title(str(axtitle))
+            ax.set_box_aspect([1, 1, 0.25])
+            allmemberidlist = list(idlist)
+            # legends = {allmemberidlist[i]: colors[i % len(colors)] for i in range(len(allmemberidlist))}
+
+            for j, id in enumerate(allmemberidlist):
+                labels = [str(id) for id in allmemberidlist]
+                x, y, z = np.where(mtrx == id)
+                if (len(x) > 2 and len(y) > 2):
+                    try:
+                        if (len(np.unique(z)) == 1):
+                            z = [zz + 1 if az % 2 == 0 else zz for az, zz in enumerate(z)]
+                        label = str(id)
+                        ax.plot_trisurf(x, y, z, color=colors[id % len(colors)], alpha=0.6, label=label)
+                        # ax.set_box_aspect([1, 1, 0.25])
+
+                        # ax.text(x=int((indicesRange[0][1] - indicesRange[0][0]) / 2), y=int(indicesRange[1][1] - 10-j*10), z=indicesRange[2][1]-1,  s=str(id))
+                        ax.text(x=x[0], y=y[0], z=z[0], s=str(id), fontsize=12)
+                    except(Exception):
+                        None
+
+            ax.set_xlim(indicesRange[0][0] - 4, indicesRange[0][1] + 4)
+            ax.set_ylim(indicesRange[1][0] - 4, indicesRange[1][1] + 4)
+            ax.set_zlim(indicesRange[2][0] - 1, indicesRange[2][1] + 1)
+            list_coordinates_all.append(
+                [indicesRange[0][0] - 4, indicesRange[0][1] + 4, indicesRange[1][0] - 4, indicesRange[1][1] + 4,
+                 indicesRange[2][0] - 1, indicesRange[2][1] + 1])
+
+            #             ax.legend()
+            ax.grid('off')
+            ax.view_init(40, 50)
+
+        fig.tight_layout()
+        filename = ftFolder + '/FamilyTrees_3D/' + 'FT3D_ID_' + prefix + str(parentId) + '_' + str(list(idlist)).replace(' ',
+                                                                                                                  '')
+        filename = filename[:250]  # File name limit
+        #         plt.legend()
+        plt.savefig(filename + '.png')
+        # fig.clear()
+
+        plt.close()
+
+
+
+    # ########################################################################################################################
+    #
+    # print('Generating 3D Family Trees.')
+    # for _i_, ft in enumerate(ftlst):
+    #     parentId = ft[0][0]
+    #     df = pd.read_csv(ftFolder + '/csvFiles/split_data_tid_' + str(parentId) + '.csv')
+    #
+    #     idlist = df.iloc[:, 1].tolist()
+    #     # print(idlist)
+    #
+    #     matrix = niftiread(trackFolder + '/TrackedCombined.nii')
+    #     newMatrix = keep_values(matrix, idlist)
+    #
+    #     indicesRange = getExtremeIndices(newMatrix)
+    #
+    #     colors = ["coral", "blue", "brown", "chartreuse", "aquamarine", "cyan", "darkorange", "darkred",
+    #               "dodgerblue", "firebrick", "forestgreen", "fuchsia", "gold", "green", "hotpink", "indigo", "khaki",
+    #               "lime", "magenta", "maroon", "mediumblue", "mediumspringgreen", "navy", "olive", "orange",
+    #               "orangered",
+    #               "orchid", "peru", "purple", "red", "royalblue", "saddlebrown", "seagreen", "sienna", "skyblue",
+    #               "springgreen", "teal", "tomato", "turquoise", "violet", "yellow", "yellowgreen", "aliceblue",
+    #               "antiquewhite", "azure", "beige", "bisque", "blanchedalmond", "burlywood", "cadetblue",
+    #               "cornflowerblue",
+    #               "cornsilk", "darkcyan", "darkgoldenrod", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+    #               "darkorchid", "darksalmon", "darkseagreen", "darkslateblue", "darkslategray", "darkturquoise",
+    #               "darkviolet", "deepskyblue"
+    #               ]
+    #
+    #     totalTimes = np.shape(matrix)[-1]
+    #
+    #     tmax = alltmax[_i_] - 1
+    #     tmin = alltmin[_i_]
+    #     totalTimes = tmax - tmin + 2
+    #
+    #     # fig = plt.figure(figsize=(160, 90))
+    #     fig = plt.figure(num=1, clear=True, figsize=(int(np.ceil(totalTimes / 4)) * 10, 30), constrained_layout=True)
+    #     fig.patch.set_facecolor('white')
+    #     fig.suptitle(str(ft[0]))
+    #
+    #     list_coordinates_all = []
+    #     for i in range(tmin, tmax):
+    #         matrix = newMatrix[:, :, :, i]
+    #         # fig = plt.figure(i)
+    #         axtitle = []
+    #         #             ax = fig.add_subplot(int(np.ceil(math.sqrt(totalTimes))), int(np.ceil(totalTimes/np.ceil(math.sqrt(totalTimes)))), i + 1, projection='3d')
+    #         ax = fig.add_subplot(int(np.ceil(totalTimes / 4)), 4, i - tmin + 1, projection='3d')
+    #         # plot_3d_matrix(matrix, idlist, indicesRange, colors, ax)
+    #
+    #         ax.xaxis.set_tick_params(labelbottom=False)
+    #         ax.yaxis.set_tick_params(labelleft=False)
+    #         ax.zaxis.set_tick_params(labelright=False)
+    #
+    #         for a in range(0, len(ft[0])):
+    #             if ft[1][a] <= i + 1 and i + 1 <= ft[2][a]:
+    #                 axtitle.append(str(ft[0][a]))
+    #
+    #         axtitle.append('t=' + str(i + 1))
+    #         ax.set_title(axtitle)
+    #         allmemberidlist = idlist + mrglst[_i_]
+    #         legends = {allmemberidlist[i]: colors[i % len(colors)] for i in range(len(allmemberidlist))}
+    #
+    #         for j, id in enumerate(allmemberidlist):
+    #             labels = [str(id) for id in allmemberidlist]
+    #
+    #             x, y, z = np.where(matrix == id)
+    #             if (len(x) > 2 and len(y) > 2):
+    #                 try:
+    #                     if (len(np.unique(z)) == 1):
+    #                         z = [zz + 1 if az % 2 == 0 else zz for az, zz in enumerate(z)]
+    #                     label = str(id)
+    #                     ax.plot_trisurf(x, y, z, color=colors[j % len(colors)], alpha=0.6, label=label)
+    #
+    #                     # ax.text(x=int((indicesRange[0][1] - indicesRange[0][0]) / 2), y=int(indicesRange[1][1] - 10-j*10), z=indicesRange[2][1]-1,  s=str(id))
+    #                 except(Exception):
+    #                     None
+    #
+    #         ax.set_xlim(indicesRange[0][0] - 4, indicesRange[0][1] + 4)
+    #         ax.set_ylim(indicesRange[1][0] - 4, indicesRange[1][1] + 4)
+    #         ax.set_zlim(indicesRange[2][0] - 1, indicesRange[2][1] + 1)
+    #         list_coordinates_all.append(
+    #             [indicesRange[0][0] - 4, indicesRange[0][1] + 4, indicesRange[1][0] - 4, indicesRange[1][1] + 4,
+    #              indicesRange[2][0] - 1, indicesRange[2][1] + 1])
+    #
+    #         #             ax.legend()
+    #         ax.grid('off')
+    #         ax.view_init(40, 50)
+    #     # print(list_coordinates_all)
+    #     prefix = '0000' if parentId < 10 else '000' if parentId < 100 else '00' if parentId < 1000 else '0' if parentId < 10000 else ''
+    #     print(f'\rSaving 3D Family Tree for tID: {prefix}{idlist[0]}', end='', flush=True)
+    #     fig.tight_layout()
+    #     filename = ftFolder + '/FamilyTrees_3D/' + 'FT3D_ID_' + prefix + str(parentId) + '_' + str(ft[0]).replace(' ',
+    #                                                                                                               '')
+    #     filename = filename[:250]  # File name limit
+    #     #         plt.legend()
+    #     plt.savefig(filename + '.png')
+    #
+    #     # print(str(ft[0]), end='\r')
+    # print('\n=================================================\n')
+    # print('\nDone!!!')
