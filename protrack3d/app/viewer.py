@@ -3,13 +3,14 @@ import csv
 import os
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, QTimer, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QSlider, QVBoxLayout, QWidget
 
 from .. import stages
 from ..segmentation import image_base, read_image_info, segmentation_folder
 from . import icons
+from .contrast import ContrastPanel, Levels
 from .pages import IMAGE_FILTERS, Page
 from .palette import id_colours
 from .widgets import Card, PathField, button, text
@@ -84,10 +85,18 @@ class Stack:
         return len(self.channel_names)
 
     def levels(self):
-        """Display range of the current channel, from its middle plane."""
+        """Display range of the current channel. It starts fitted to the middle plane and is the user's to change."""
         if self.channel not in self._levels:
-            mid = self.plane(self.info['t'] // 2, self.info['z'] // 2).astype(np.float64)
-            self._levels[self.channel] = (np.percentile(mid, 1), max(np.percentile(mid, 99.9), np.percentile(mid, 1) + 1))
+            t, z = self.info['t'], self.info['z']
+            mid = self.plane(t // 2, z // 2)
+            whole = np.issubdtype(mid.dtype, np.integer)
+            if mid.dtype == np.uint8:
+                data_min, data_max = 0, 255
+            else:  # the range of the data, from the first, middle and last timepoints; render() widens it if needed
+                planes = [self.plane(i, k) for i in sorted({0, t // 2, t - 1}) for k in range(z)]
+                data_min, data_max = min(float(p.min()) for p in planes), max(float(p.max()) for p in planes)
+            low = float(np.percentile(mid, 1))
+            self._levels[self.channel] = Levels(data_min, data_max, low, max(float(np.percentile(mid, 99.9)), low + 1), whole)
         return self._levels[self.channel]
 
     def plane(self, t, z):
@@ -196,7 +205,13 @@ class ViewerPage(Page):
         self.canvas.hovered.connect(self.hover)
         self.canvas.clicked.connect(self.click)
         self.canvas.scrolled.connect(lambda step: self.z_slider.setValue(self.z_slider.value() + step))
-        self.body.addWidget(self.canvas, 1)
+        self.contrast = ContrastPanel(ctx.theme)
+        self.contrast.changed.connect(self.render)
+        middle = QHBoxLayout()
+        middle.setSpacing(16)
+        middle.addWidget(self.canvas, 1)
+        middle.addWidget(self.contrast)
+        self.body.addLayout(middle, 1)
 
         card = Card(margins=14, spacing=10)
         self.t_slider, self.t_label = self._slider('Timepoint')
@@ -243,6 +258,12 @@ class ViewerPage(Page):
         row.addStretch(1)
         self.readout = text('', 'hint')
         row.addWidget(self.readout)
+        self.contrast_button = button('Brightness && contrast', 'ghost', tip='Show or hide the brightness and contrast panel')
+        self.contrast_button.setCheckable(True)
+        self.contrast_button.setChecked(QSettings().value('viewer_contrast', 'true') == 'true')
+        self.contrast_button.toggled.connect(self.show_contrast)
+        self.contrast.setVisible(self.contrast_button.isChecked())
+        row.addWidget(self.contrast_button)
         card.box.addLayout(row)
         self.body.addWidget(card)
         self.timer = QTimer(self)
@@ -256,6 +277,10 @@ class ViewerPage(Page):
         slider.setRange(0, 0)
         slider.valueChanged.connect(self.render)
         return slider, text(name, 'label')
+
+    def show_contrast(self, shown):
+        QSettings().setValue('viewer_contrast', 'true' if shown else 'false')
+        self.contrast.setVisible(shown)
 
     def restyle(self):
         self.play.setIcon(icons.icon('pause' if self.play.isChecked() else 'play', self.ctx.theme.colors['text'], 16))
@@ -274,6 +299,7 @@ class ViewerPage(Page):
         if not self.stack:
             self.canvas.pixmap = None
             self.canvas.update()
+            self.contrast.display(None, None, None)
             return
         info, s = self.stack.info, self.stack
         found = [n for n, d in (('mask', s.mask if s.mask is not None else s.mask_tif), ('tracks', s.tracks)) if d is not None]
@@ -323,9 +349,10 @@ class ViewerPage(Page):
         self.t_label.setText(f"Timepoint {t + 1} of {s.info['t']}")
         self.z_label.setText(f"Slice {z + 1} of {s.info['z']}")
         plane = s.plane(t, z).astype(np.float32)
-        low, high = s.levels()
-        grey = np.clip((plane - low) / (high - low), 0, 1)
-        rgb = np.repeat((grey * 255).astype(np.uint8)[..., None], 3, axis=2)
+        levels = s.levels()
+        levels.include(plane.min(), plane.max())
+        self.contrast.display(levels, plane, (id(s), s.channel, t, z, levels.data_min, levels.data_max))
+        rgb = np.repeat((levels.scale(plane) * 255).astype(np.uint8)[..., None], 3, axis=2)
         kind = self.OVERLAYS[self.overlay.currentIndex()][1]
         self.labels = s.overlay(kind, t, z) if kind else None
         if self.labels is not None and self.labels.shape == plane.shape:

@@ -105,6 +105,8 @@ Your original image is never changed.
 
 **Viewer.** Drop the image (`.tif`, `.nii` or `.czi`). If the file has several channels, pick the channel at the bottom. Scroll the mouse wheel to move through z. Drag the time slider or press play. Choose "Tracked objects" to see every object in its own colour. Click an object and its whole family lights up.
 
+The panel on the right is brightness and contrast, the way ImageJ does it. The picture on top is the histogram of the slice you are looking at; the line over it shows what is drawn black and what is drawn white. Move **Minimum** and **Maximum**, or **Brightness** and **Contrast**, or type the two numbers. **Auto** fits the range to the slice; press it again to cut deeper. **Reset** shows the whole range. Each channel keeps its own setting. This only changes what you see. Your data and the measurements are not changed.
+
 **Lineage.** Drop the `_TrackingOutput` folder. Every object is a row. Dots are timepoints. Blue links are splits. Red dashed links are merges. Click a row to see its family. Double-click to jump to that object in the Viewer. Zoom with pinch or Ctrl-scroll.
 
 **Family tree.** Two kinds:

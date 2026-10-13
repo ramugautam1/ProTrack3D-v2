@@ -54,6 +54,7 @@ QPushButton#primary:hover {{ background: {accent_hover}; }}
 QPushButton#primary:disabled {{ background: {border}; color: {faint}; }}
 QPushButton#ghost {{ border: none; background: transparent; color: {muted}; padding: 5px 8px; }}
 QPushButton#ghost:hover {{ color: {accent}; background: {surface2}; }}
+QPushButton#ghost:checked {{ color: {accent}; }}
 QPushButton#danger:hover {{ border-color: {bad}; color: {bad}; }}
 
 QLineEdit, QComboBox, QPlainTextEdit {{ background: {surface}; border: 1px solid {border}; border-radius: 8px;
