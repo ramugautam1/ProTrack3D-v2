@@ -93,6 +93,10 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 QScrollBar:horizontal {{ height: 0; }}
 
 #viewer {{ background: {viewer}; border-radius: 12px; }}
+#viewer[active="true"] {{ border: 2px dashed {accent}; }}
+QPushButton#viewerButton {{ background: rgba(255, 255, 255, 0.14); color: #FFFFFF; border: none; border-radius: 7px; padding: 0; font-weight: 600; }}
+QPushButton#viewerButton:hover {{ background: rgba(255, 255, 255, 0.28); }}
+#viewerLevel {{ color: rgba(255, 255, 255, 0.75); background: rgba(0, 0, 0, 0.45); border-radius: 6px; padding: 2px 7px; font-size: 11px; }}
 #console {{ background: #0E1318; border-top: 1px solid {border}; }}
 #consoleTitle {{ color: #E7ECF1; font-weight: 600; font-size: 12px; }}
 #consoleStatus {{ color: #35C6AE; font-size: 12px; }}

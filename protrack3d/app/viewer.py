@@ -4,7 +4,7 @@ import gc
 import os
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QSlider, QVBoxLayout, QWidget
 
@@ -15,7 +15,14 @@ from .contrast import ContrastPanel, Levels, SaveDialog
 from .jobs import Job
 from .pages import IMAGE_FILTERS, Page
 from .palette import id_colours
-from .widgets import Card, PathField, button, text
+from .widgets import Card, ElidedLabel, PathField, button, text
+
+
+def rename_active(widget, active):
+    """Switch a widget's 'active' look (a file is being dragged over it) on or off."""
+    widget.setProperty('active', 'true' if active else 'false')
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 VIEWER_FILTERS = 'Images (*.tif *.tiff *.nii *.czi);;All files (*)'
@@ -147,58 +154,200 @@ class Stack:
 
 
 class Canvas(QWidget):
+    """Shows one plane. Ctrl-scroll or pinch zooms around the pointer, dragging pans, a double-click fits the image
+    again; a plain scroll is passed on (it moves through the slices)."""
     hovered = Signal(int, int)
     clicked = Signal(int, int)
     scrolled = Signal(int)
+    MARGIN, MOST = 12, 40  # MOST: screen pixels per image pixel at the closest zoom
 
-    def __init__(self):
+    def __init__(self, theme):
         super().__init__()
+        self.theme = theme
         self.setObjectName('viewer')
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setMouseTracking(True)
         self.setMinimumHeight(320)
         self.pixmap, self.target, self.marker = None, QRectF(), None  # marker: (x, y, radius) in image pixels
+        self.zoom, self.centre, self._drag = 1.0, None, None  # zoom 1 fits the image; centre is in image pixels
+        self.prompt = ''
+        self.buttons = []
+        for label, tip, action in (('+', 'Zoom in (Ctrl-scroll or pinch)', lambda: self.zoom_by(1.5)),
+                                   ('−', 'Zoom out', lambda: self.zoom_by(1 / 1.5)),
+                                   ('Fit', 'Show the whole image (double-click)', self.fit)):
+            b = button(label, 'viewerButton', tip=tip)
+            b.setParent(self)
+            b.setFixedSize(44 if label == 'Fit' else 30, 28)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.clicked.connect(action)
+            b.hide()
+            self.buttons.append(b)
+        self.level = text('', 'viewerLevel')
+        self.level.setParent(self)
+        self.level.hide()
+
+    # --- the view ---
+    def _fit_scale(self):
+        m = 2 * self.MARGIN
+        return max(1e-6, min((self.width() - m) / self.pixmap.width(), (self.height() - m) / self.pixmap.height()))
+
+    def _scale(self):
+        return self._fit_scale() * self.zoom
+
+    def _place(self):
+        """Where the whole image lies in the widget at the current zoom; the view is kept inside the image."""
+        scale, view = self._scale(), self.view()
+        w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
+        cx, cy = self.centre if self.centre else (self.pixmap.width() / 2, self.pixmap.height() / 2)
+        if w <= view.width():
+            cx = self.pixmap.width() / 2
+        else:
+            cx = min(max(cx, view.width() / 2 / scale), self.pixmap.width() - view.width() / 2 / scale)
+        if h <= view.height():
+            cy = self.pixmap.height() / 2
+        else:
+            cy = min(max(cy, view.height() / 2 / scale), self.pixmap.height() - view.height() / 2 / scale)
+        self.centre = (cx, cy)
+        self.target = QRectF(view.center().x() - cx * scale, view.center().y() - cy * scale, w, h)
+
+    def view(self):
+        return QRectF(self.rect()).adjusted(self.MARGIN, self.MARGIN, -self.MARGIN, -self.MARGIN)
+
+    def fit(self):
+        self.zoom, self.centre = 1.0, None
+        self._changed()
+
+    def zoom_by(self, factor, at=None):
+        """Zoom, keeping the image point under `at` (a widget position; default: the middle) where it is."""
+        if not self.pixmap:
+            return
+        self._place()
+        at = at or self.view().center()
+        old = self._scale()
+        most = max(1.0, self.MOST / self._fit_scale())
+        self.zoom = min(max(self.zoom * factor, 1.0), most)
+        new = self._scale()
+        px, py = (at.x() - self.target.x()) / old, (at.y() - self.target.y()) / old  # image point under the pointer
+        centre = self.view().center()
+        self.centre = (px + (centre.x() - at.x()) / new, py + (centre.y() - at.y()) / new)
+        self._changed()
+
+    def centre_on(self, x, y):
+        self.centre = (x, y)
+        self._changed()
+
+    def shows(self, x, y):
+        """Is this image point inside what is on screen?"""
+        self._place()
+        scale = self._scale()
+        return self.view().contains(QPointF(self.target.x() + x * scale, self.target.y() + y * scale))
+
+    def _changed(self):
+        zoomed = self.zoom > 1.001
+        self.level.setText(f'{self._scale() * 100:.0f}%' if self.pixmap else '')
+        self.level.adjustSize()
+        self.setCursor(Qt.OpenHandCursor if zoomed else Qt.ArrowCursor)
+        self._arrange()
+        self.update()
+
+    def _arrange(self):
+        x = self.width() - self.MARGIN - 8
+        for b in reversed(self.buttons):
+            x -= b.width()
+            b.move(x, self.MARGIN + 8)
+            b.setVisible(self.pixmap is not None)
+            x -= 4
+        self.level.move(self.MARGIN + 10, self.height() - self.MARGIN - 8 - self.level.height())
+        self.level.setVisible(self.pixmap is not None)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange()
+
+    def clear(self):
+        self.pixmap, self.marker = None, None
+        self.fit()
 
     def show_rgb(self, rgb):
         h, w, _ = rgb.shape
+        fresh = self.pixmap is None or (self.pixmap.width(), self.pixmap.height()) != (w, h)
         self.pixmap = QPixmap.fromImage(QImage(np.ascontiguousarray(rgb).data, w, h, 3 * w, QImage.Format_RGB888).copy())
-        self.update()
+        if fresh:  # another image: start from the whole picture
+            self.zoom, self.centre = 1.0, None
+        self._changed()
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self.pixmap:
-            return
         painter = QPainter(self)
-        margin = 12
-        scale = min((self.width() - 2 * margin) / self.pixmap.width(), (self.height() - 2 * margin) / self.pixmap.height())
-        w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
-        self.target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
+        if not self.pixmap:
+            painter.setPen(QColor(self.theme.colors['faint']))
+            painter.drawText(self.rect(), Qt.AlignCenter, self.prompt)
+            return
+        self._place()
+        scale, view = self._scale(), self.view()
+        painter.setClipRect(view)
+        # only the part of the image that is on screen is drawn, in whole image pixels
+        x0, y0 = max(0, int((view.left() - self.target.x()) / scale)), max(0, int((view.top() - self.target.y()) / scale))
+        x1 = min(self.pixmap.width(), int((view.right() - self.target.x()) / scale) + 1)
+        y1 = min(self.pixmap.height(), int((view.bottom() - self.target.y()) / scale) + 1)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, scale < 1)
-        painter.drawPixmap(self.target, self.pixmap, QRectF(self.pixmap.rect()))
+        painter.drawPixmap(QRectF(self.target.x() + x0 * scale, self.target.y() + y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale),
+                           self.pixmap, QRectF(x0, y0, x1 - x0, y1 - y0))
         if self.marker:  # a ring around the picked object, so a few voxels are easy to find
             x, y, r = self.marker
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(QPen(QColor(255, 255, 255, 230), 1.6))
             painter.drawEllipse(QPointF(self.target.x() + (x + 0.5) * scale, self.target.y() + (y + 0.5) * scale), r * scale, r * scale)
 
+    # --- the mouse ---
     def wheelEvent(self, event):
-        self.scrolled.emit(1 if event.angleDelta().y() > 0 else -1)
+        if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
+            self.zoom_by(1.2 if event.angleDelta().y() > 0 else 1 / 1.2, event.position())
+        elif event.angleDelta().y():
+            self.scrolled.emit(1 if event.angleDelta().y() > 0 else -1)
+
+    def event(self, event):
+        if event.type() == QEvent.NativeGesture and event.gestureType() == Qt.ZoomNativeGesture:  # trackpad pinch
+            self.zoom_by(1 + event.value(), event.position())
+            return True
+        return super().event(event)
 
     def _pixel(self, pos):
-        if not self.pixmap or not self.target.contains(pos):
+        if not self.pixmap or not self.target.contains(pos) or not self.view().contains(pos):
             return None
-        return (int((pos.x() - self.target.x()) / self.target.width() * self.pixmap.width()),
-                int((pos.y() - self.target.y()) / self.target.height() * self.pixmap.height()))
+        return (min(self.pixmap.width() - 1, int((pos.x() - self.target.x()) / self.target.width() * self.pixmap.width())),
+                min(self.pixmap.height() - 1, int((pos.y() - self.target.y()) / self.target.height() * self.pixmap.height())))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.pixmap:
+            self._drag = (event.position(), self.centre, False)  # where it began, the centre then, whether it moved
 
     def mouseMoveEvent(self, event):
+        if self._drag:
+            began, centre, moved = self._drag
+            delta = event.position() - began
+            if moved or abs(delta.x()) + abs(delta.y()) > 4:
+                self._drag = (began, centre, True)
+                if self.zoom > 1.001 and centre:
+                    self.setCursor(Qt.ClosedHandCursor)
+                    self.centre = (centre[0] - delta.x() / self._scale(), centre[1] - delta.y() / self._scale())
+                    self.update()
+                return
         at = self._pixel(event.position())
         if at:
             self.hovered.emit(*at)
 
     def mouseReleaseEvent(self, event):
+        drag, self._drag = self._drag, None
+        self.setCursor(Qt.OpenHandCursor if self.zoom > 1.001 else Qt.ArrowCursor)
+        if drag and drag[2]:
+            return  # that was a drag, not a click
         at = self._pixel(event.position())
-        if at:
+        if at and event.button() == Qt.LeftButton:
             self.clicked.emit(*at)
+
+    def mouseDoubleClickEvent(self, event):
+        self.fit()
 
 
 class ViewerPage(Page):
@@ -211,7 +360,9 @@ class ViewerPage(Page):
         self.source = PathField(ctx.theme, 'file', 'Drop an image here (.tif, .nii or .czi), or browse. Its mask and tracks are picked up when they are next to it.', VIEWER_FILTERS)
         self.source.changed.connect(self.open)
         self.body.addWidget(self.source)
-        self.canvas = Canvas()
+        self.canvas = Canvas(ctx.theme)
+        self.canvas.prompt = 'Drop an image here'
+        self.setAcceptDrops(True)  # anywhere on the page, the picture included
         self.canvas.hovered.connect(self.hover)
         self.canvas.clicked.connect(self.click)
         self.canvas.scrolled.connect(lambda step: self.z_slider.setValue(self.z_slider.value() + step))
@@ -260,17 +411,8 @@ class ViewerPage(Page):
         row.addWidget(self.overlay)
         row.addWidget(text('Opacity', 'label'))
         row.addWidget(self.opacity)
-        self.focus_label = text('', 'label')
-        self.lineage_button = button('Show in lineage', 'ghost')
-        self.lineage_button.clicked.connect(self.to_lineage)
-        self.clear_button = button('Show all objects', 'ghost')
-        self.clear_button.clicked.connect(lambda: self.set_highlight(None))
-        for w in (self.focus_label, self.lineage_button, self.clear_button):
-            w.hide()
-            row.addWidget(w)
-        row.addStretch(1)
-        self.readout = text('', 'hint')
-        row.addWidget(self.readout)
+        self.readout = ElidedLabel('', 'hint')  # takes the room that is left, so a long readout cannot widen the page
+        row.addWidget(self.readout, 1)
         self.contrast_button = button('Brightness && contrast', 'ghost', tip='Show or hide the brightness and contrast panel')
         self.contrast_button.setCheckable(True)
         self.contrast_button.setChecked(QSettings().value('viewer_contrast', 'true') == 'true')
@@ -278,6 +420,19 @@ class ViewerPage(Page):
         self.contrast.setVisible(self.contrast_button.isChecked())
         row.addWidget(self.contrast_button)
         card.box.addLayout(row)
+        self.picked = QWidget()  # a line of its own, shown while an object is picked out
+        row = QHBoxLayout(self.picked)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.focus_label = text('', 'label')
+        self.lineage_button = button('Show in lineage', 'ghost')
+        self.lineage_button.clicked.connect(self.to_lineage)
+        self.clear_button = button('Show all objects', 'ghost')
+        self.clear_button.clicked.connect(lambda: self.set_highlight(None))
+        for w in (self.focus_label, self.lineage_button, self.clear_button):
+            row.addWidget(w)
+        row.addStretch(1)
+        self.picked.hide()
+        card.box.addWidget(self.picked)
         self.body.addWidget(card)
         self.timer = QTimer(self)
         self.timer.setInterval(120)
@@ -310,8 +465,7 @@ class ViewerPage(Page):
             self.reopen = (job, image)
             self.stack = None
             gc.collect()
-            self.canvas.pixmap = None
-            self.canvas.update()
+            self.canvas.clear()
             self.contrast.display(None, None, None)
             self.source.set_detail('Being replaced…')
         self.ctx.submit(job, announce=False)
@@ -328,6 +482,26 @@ class ViewerPage(Page):
             for levels in self.stack.all_levels():
                 levels.reset()
             self.render()
+
+    def _dropped(self, event):
+        urls = event.mimeData().urls()
+        path = urls[0].toLocalFile() if len(urls) == 1 and urls[0].isLocalFile() else ''
+        return path if os.path.isfile(path) else None
+
+    def dragEnterEvent(self, event):
+        if self._dropped(event):
+            event.acceptProposedAction()
+            rename_active(self.canvas, True)
+
+    def dragLeaveEvent(self, event):
+        rename_active(self.canvas, False)
+
+    def dropEvent(self, event):
+        path = self._dropped(event)
+        rename_active(self.canvas, False)
+        if path:
+            event.acceptProposedAction()
+            self.source.set_path(path)
 
     def show_contrast(self, shown):
         QSettings().setValue('viewer_contrast', 'true' if shown else 'false')
@@ -348,8 +522,7 @@ class ViewerPage(Page):
             except Exception as e:
                 self.source.set_detail(str(e))
         if not self.stack:
-            self.canvas.pixmap = None
-            self.canvas.update()
+            self.canvas.clear()
             self.contrast.display(None, None, None)
             return
         info, s = self.stack.info, self.stack
@@ -454,8 +627,7 @@ class ViewerPage(Page):
         if self.focus is not None:
             n = len(self.highlight)
             self.focus_label.setText(f'Object {obj}' + (f' and its family ({n} objects)' if n > 1 else ', no relatives'))
-        for w in (self.focus_label, self.lineage_button, self.clear_button):
-            w.setVisible(self.focus is not None)
+        self.picked.setVisible(self.focus is not None)
         self.render()
 
     def click(self, x, y):
@@ -480,6 +652,8 @@ class ViewerPage(Page):
         if z is not None:
             self.z_slider.setValue(z)
         self.set_highlight(obj)
+        if self.canvas.marker and not self.canvas.shows(*self.canvas.marker[:2]):  # zoomed in somewhere else
+            self.canvas.centre_on(*self.canvas.marker[:2])
 
     def to_lineage(self):
         if self.focus is not None and self.stack:

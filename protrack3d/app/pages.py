@@ -103,6 +103,7 @@ class ImagePage(Page):
 
     def add_image_field(self, card):
         self.info = None
+        self.setAcceptDrops(True)  # an image dropped anywhere on the page counts, not only on the field
         self.image = PathField(self.ctx.theme, 'file', 'Drop an image here (.tif or .nii), or browse', IMAGE_FILTERS)
         self.image.changed.connect(self._image_changed)
         card.row('Image', self.image)
@@ -119,6 +120,21 @@ class ImagePage(Page):
 
     def image_changed(self, path):
         pass
+
+    def _dropped_image(self, event):
+        urls = event.mimeData().urls()
+        path = urls[0].toLocalFile() if len(urls) == 1 and urls[0].isLocalFile() else ''
+        return path if os.path.isfile(path) else None
+
+    def dragEnterEvent(self, event):
+        if self._dropped_image(event):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        path = self._dropped_image(event)
+        if path:
+            event.acceptProposedAction()
+            self.image.set_path(path)
 
     def set_image(self, path):
         self.image.set_path(path)
