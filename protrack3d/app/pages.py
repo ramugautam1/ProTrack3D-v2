@@ -778,7 +778,22 @@ class HomePage(Page):
         self.recent = Card('Recent jobs')
         self.recent_text = self.recent.add(text('Nothing has been run in this session.', 'hint', wrap=True))
         self.body.addWidget(self.recent)
+        self.updates = Card('Updates')
+        self.update_text = self.updates.add(text('', 'sub', wrap=True))
+        self.update_news = self.updates.add(text('', 'hint', wrap=True))
+        row = QHBoxLayout()
+        self.update_action = button('', 'primary')
+        self.update_action.clicked.connect(self.update_clicked)
+        self.update_check = button('Check for updates')
+        self.update_check.clicked.connect(ctx.updater.check)
+        row.addWidget(self.update_action)
+        row.addWidget(self.update_check)
+        row.addStretch(1)
+        self.updates.box.addLayout(row)
+        self.body.addWidget(self.updates)
         self.body.addStretch(1)
+        ctx.updater.changed.connect(self.show_update)
+        self.show_update()
         ctx.theme.listeners.append(self.restyle)
         ctx.jobs.changed.connect(self.refresh)
         ctx.jobs.finished.connect(lambda _job: self.refresh())
@@ -787,6 +802,44 @@ class HomePage(Page):
     def restyle(self):
         for pic, key in self.buttons:
             pic.setPixmap(icons.pixmap(key, self.ctx.theme.colors['accent'], 24))
+
+    def show_update(self):
+        u = self.ctx.updater
+        info, state = u.info, u.state
+
+        def version(v):
+            return f"{v['id']} from {v['date']}" if v else 'version unknown'
+
+        self.update_text.setText({
+            'unknown': 'Not checked yet.',
+            'checking': 'Looking for a newer version…',
+            'current': f"You have the newest version ({version(info.get('current'))}).",
+            'available': f"A newer version is available ({version(info.get('latest'))}).",
+            'updating': 'Updating. The Jobs page shows how far it is.',
+            'updated': 'Updated. Start ProTrack3D again to use the new version.',
+            'error': f'That did not work: {u.error}',
+            'packaged': 'This is the packaged app. It cannot update itself; get the new version from GitHub.'}[state])
+        rename(self.update_text, 'error' if state == 'error' else 'sub')
+        news = ''
+        if state == 'available':
+            changes = info.get('changes', [])
+            if info.get('kind') == 'zip' and info.get('files'):
+                news = f"{info['files']} file{'s' if info['files'] != 1 else ''} will be replaced. Newest change: {changes[0]}\n"
+            else:
+                news = ''.join(f'•  {c}\n' for c in changes[:8]) + (f'and {len(changes) - 8} more\n' if len(changes) > 8 else '')
+            news += 'Your models, images and results are not touched.'
+        self.update_news.setText(news)
+        self.update_news.setVisible(bool(news))
+        self.update_action.setText('Restart ProTrack3D' if state == 'updated' else 'Update now')
+        self.update_action.setVisible(state in ('available', 'updated'))
+        self.update_check.setVisible(state in ('unknown', 'checking', 'current', 'available', 'error'))
+        self.update_check.setEnabled(state != 'checking')
+
+    def update_clicked(self):
+        u = self.ctx.updater
+        problem = u.restart() if u.state == 'updated' else u.install()
+        if problem:
+            self.ctx.toast(problem)
 
     def refresh(self):
         jobs = self.ctx.jobs.jobs[-5:][::-1]

@@ -36,6 +36,9 @@ def main(argv=None):
     p = sub.add_parser('download-models', help='download published models (default: all that are not installed)')
     p.add_argument('names', nargs='*')
 
+    p = sub.add_parser('update', help='update ProTrack3D to the newest published version')
+    p.add_argument('--check', action='store_true', help='only say whether a newer version exists')
+
     p = sub.add_parser('import-model', help='turn a converted TensorFlow checkpoint (.npz) into a model file')
     p.add_argument('npz')
 
@@ -143,6 +146,13 @@ def main(argv=None):
 
 
 def run(args, reporter):
+    if args.command == 'update':  # before the heavy imports: this has to answer quickly
+        from . import update
+        if args.check:
+            print(json.dumps(update.check(), indent=None if args.json else 2))
+        else:
+            update.apply(reporter)
+        return 0
     from . import stages
     from .segmentation import read_image_info, segment_image, segmentation_folder
 
