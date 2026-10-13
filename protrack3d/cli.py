@@ -50,7 +50,7 @@ def main(argv=None):
 
     p = sub.add_parser('segment', help='segment an image')
     image_args(p)
-    p.add_argument('--no-seg-tif', action='store_true', help='do not write <image>_SEG.tif next to the image')
+    p.add_argument('--no-seg-tif', action='store_true', help='do not write the mask as <image>_SEG.tif')
 
     p = sub.add_parser('train', help='train a segmentation model on a folder of two-channel stacks (image, mask)')
     p.add_argument('folder')

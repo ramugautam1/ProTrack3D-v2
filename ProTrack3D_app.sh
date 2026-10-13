@@ -4,7 +4,7 @@ cd "$(dirname "$0")" || exit 1
 ENV_NAME="${PROTRACK3D_ENV:-protrack3d-torch}"
 
 if ! command -v conda >/dev/null 2>&1; then
-    for d in "$HOME/miniforge3" "$HOME/miniconda3" "$HOME/anaconda3" "$HOME/mambaforge" /opt/homebrew/Caskroom/miniforge/base /opt/miniconda3 /opt/anaconda3; do
+    for d in "$HOME/miniforge3" "$HOME/miniconda3" "$HOME/anaconda3" "$HOME/mambaforge" /opt/homebrew/Caskroom/miniforge/base /opt/miniforge3 /opt/miniconda3 /opt/anaconda3; do
         if [ -f "$d/etc/profile.d/conda.sh" ]; then
             source "$d/etc/profile.d/conda.sh"
             break
