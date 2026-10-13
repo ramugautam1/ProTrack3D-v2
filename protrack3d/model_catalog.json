@@ -1,0 +1,110 @@
+{
+  "base_url": "https://github.com/ramugautam1/ProTrack3D-v2/releases/download/models-v1/",
+  "models": [
+    {
+      "name": "AjubaDicedNov00000T",
+      "file": "AjubaDicedNov00000T.pt",
+      "size": 104541133,
+      "sha256": "af1ff22c3170cedad8c365d87f052f88e370d093150fd9786c6cfdeb036522be",
+      "meta": {
+        "best_val_iou": 0.695302873767673,
+        "best_epoch": 185,
+        "trained_on": "2024-11-21",
+        "source_checkpoint": "AjubaDicedNov00000T",
+        "converted_from": "tensorflow",
+        "classes": [
+          "Cell",
+          "Background"
+        ],
+        "patch_xy": 32,
+        "feature_channels": 64,
+        "architecture": "FC-DenseNet103",
+        "name": "AjubaDicedNov00000T"
+      }
+    },
+    {
+      "name": "BAZOOKA_07212025",
+      "file": "BAZOOKA_07212025.pt",
+      "size": 104538982,
+      "sha256": "d1eade42a43b2919c2bb944078aacc7a6c0f43916b47716e69280088bbe496d8",
+      "meta": {
+        "best_val_iou": 0.7261881188118812,
+        "best_epoch": 48,
+        "trained_on": "2025-07-21",
+        "source_checkpoint": "BAZOOKA_07212025",
+        "converted_from": "tensorflow",
+        "classes": [
+          "Cell",
+          "Background"
+        ],
+        "patch_xy": 32,
+        "feature_channels": 64,
+        "architecture": "FC-DenseNet103",
+        "name": "BAZOOKA_07212025"
+      }
+    },
+    {
+      "name": "Baz91823SCR1T",
+      "file": "Baz91823SCR1T.pt",
+      "size": 104536831,
+      "sha256": "31fdab1f804996732d0da172de62650d2a228e0e14e6341288b15dead2a4924a",
+      "meta": {
+        "best_val_iou": 0.6237865917559516,
+        "best_epoch": 177,
+        "trained_on": "2024-10-24",
+        "source_checkpoint": "Baz91823SCR1T",
+        "converted_from": "tensorflow",
+        "classes": [
+          "Cell",
+          "Background"
+        ],
+        "patch_xy": 32,
+        "feature_channels": 64,
+        "architecture": "FC-DenseNet103",
+        "name": "Baz91823SCR1T"
+      }
+    },
+    {
+      "name": "ErodedGishGT20261_0000T",
+      "file": "ErodedGishGT20261_0000T.pt",
+      "size": 104544065,
+      "sha256": "6754ba1eea70a0464f5a8f9a880f1fbe74fa566532ba27142ac597edd27b3788",
+      "meta": {
+        "best_val_iou": 0.4974386467749177,
+        "best_epoch": 49,
+        "trained_on": "2026-05-13",
+        "source_checkpoint": "ErodedGishGT20261_0000T",
+        "converted_from": "tensorflow",
+        "classes": [
+          "Cell",
+          "Background"
+        ],
+        "patch_xy": 32,
+        "feature_channels": 64,
+        "architecture": "FC-DenseNet103",
+        "name": "ErodedGishGT20261_0000T"
+      }
+    },
+    {
+      "name": "GishDiced15_00000000T",
+      "file": "GishDiced15_00000000T.pt",
+      "size": 104542567,
+      "sha256": "f9ca93bd4dbf49a8f0ae77c25bfc36d68558aef1523170e888d81fbfb798fa40",
+      "meta": {
+        "best_val_iou": 0.568831312361511,
+        "best_epoch": 94,
+        "trained_on": "2024-11-20",
+        "source_checkpoint": "GishDiced15_00000000T",
+        "converted_from": "tensorflow",
+        "classes": [
+          "Cell",
+          "Background"
+        ],
+        "patch_xy": 32,
+        "feature_channels": 64,
+        "architecture": "FC-DenseNet103",
+        "name": "GishDiced15_00000000T"
+      }
+    }
+  ]
+}
