@@ -4,3 +4,5 @@ models/
 packaging/build/
 packaging/dist/
 packaging/build.log
+.protrack3d_update.json
+.protrack3d_update_pending

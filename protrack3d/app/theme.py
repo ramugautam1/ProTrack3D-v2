@@ -28,6 +28,8 @@ QToolTip {{ background: {surface2}; color: {text}; border: 1px solid {border}; p
 #nav:checked {{ background: {accent_soft}; color: {accent}; font-weight: 600; }}
 #badge {{ background: {accent}; color: {on_accent}; border-radius: 9px; padding: 1px 7px; font-size: 11px; font-weight: 700; }}
 #chip {{ background: {surface2}; color: {muted}; border-radius: 10px; padding: 3px 9px; font-size: 11px; }}
+QPushButton#notice {{ text-align: left; padding: 8px 12px; border: none; border-radius: 8px; background: {accent_soft}; color: {accent}; font-weight: 600; font-size: 12px; }}
+QPushButton#notice:hover {{ background: {surface2}; }}
 
 #h1 {{ font-size: 24px; font-weight: 700; }}
 #h2 {{ font-size: 15px; font-weight: 600; }}

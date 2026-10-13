@@ -35,6 +35,18 @@ On a Mac, the first time, macOS may refuse to open the file because it came from
 
 That is it. You are ready.
 
+## Updating
+
+You do not need the terminal for this.
+
+1. Go to **Home**. At the bottom there is a card called **Updates**. The app looks for a newer version by itself each time it starts; press **Check for updates** to look again.
+2. If there is one, press **Update now**. It takes a few seconds.
+3. Press **Restart ProTrack3D**.
+
+Your models, images and results are not touched. Only the program files are replaced. Wait for running jobs to finish first; the app will tell you if you forget.
+
+If you changed program files yourself, the update may refuse (a git copy) or replace your changes (a ZIP copy). Keep your own edits somewhere else.
+
 ## Your images
 
 - One image per file. `.tif` works best. `.nii` also works.

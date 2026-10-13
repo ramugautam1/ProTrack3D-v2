@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QPushButton, QSplitter, QVBoxLayout, QWidget
 
@@ -12,6 +12,7 @@ from .armdia_page import ArmDiaPage
 from .console import Console
 from .jobs import JobManager, engine_command
 from .lineage_page import LineagePage
+from .updater import Updater
 from .pages import AnalysisPage, HomePage, JobsPage, ModelsPage, PipelinePage, SegmentPage, TrackPage, TrainPage, TreePage
 from .widgets import ModelBox
 from .viewer import ViewerPage
@@ -30,6 +31,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.theme, self.jobs = theme, JobManager()
         self.device_kind = None  # 'cuda', 'mps' or 'cpu', once the engine has answered
+        self.updater = Updater(self)
         self.setWindowTitle('ProTrack3D')
         self.resize(1180, 800)
         self.setMinimumSize(980, 640)
@@ -79,6 +81,13 @@ class MainWindow(QMainWindow):
             bar.addWidget(b)
             self.pages[key] = page_class(self)
             self.stack.addWidget(self.pages[key])
+        self.update_notice = QPushButton()
+        self.update_notice.setObjectName('notice')
+        self.update_notice.setCursor(Qt.PointingHandCursor)
+        self.update_notice.clicked.connect(lambda: self.navigate('home'))
+        self.update_notice.hide()
+        bar.addSpacing(6)
+        bar.addWidget(self.update_notice)
         bar.addSpacing(10)
         foot = QHBoxLayout()
         self.device = text('', 'chip')
@@ -120,6 +129,8 @@ class MainWindow(QMainWindow):
         self.buttons['home'].setChecked(True)
         self.restyle()
         self.ask_device()
+        self.updater.changed.connect(self.update_changed)
+        QTimer.singleShot(1500, lambda: self.updater.check(quiet=True))  # once the window is up
 
     # --- what pages use ---
     def navigate(self, key):
@@ -184,6 +195,13 @@ class MainWindow(QMainWindow):
         self.toast(f'{job.title}  {words.get(job.state, job.state)}')
         if 'training' in job.stages or 'download' in job.stages:
             self.models_changed()
+
+    def update_changed(self):
+        state = self.updater.state
+        self.update_notice.setText({'available': 'Update available', 'updated': 'Restart to finish updating'}.get(state, ''))
+        self.update_notice.setVisible(state in ('available', 'updated'))
+        if state == 'updated':
+            self.navigate('home')
 
     def models_changed(self):
         """A model was added or updated: refresh every list of models."""
