@@ -24,6 +24,29 @@ fi
 
 # Start the app on its own, so this window can be closed.
 PYTHON="$(conda run -n "$ENV_NAME" python -c 'import sys; print(sys.executable)')"
+
+# On macOS, Python is started through a small app bundle, so the Dock shows ProTrack3D and its icon, not Python.
+if [ "$(uname)" = "Darwin" ]; then
+    BUNDLE="$PWD/.launcher/ProTrack3D.app"
+    rm -rf "$PWD/.launcher"
+    mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
+    cp packaging/ProTrack3D.icns "$BUNDLE/Contents/Resources/"
+    ln -s "$PYTHON" "$BUNDLE/Contents/MacOS/ProTrack3D"
+    cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleName</key><string>ProTrack3D</string>
+    <key>CFBundleDisplayName</key><string>ProTrack3D</string>
+    <key>CFBundleExecutable</key><string>ProTrack3D</string>
+    <key>CFBundleIconFile</key><string>ProTrack3D.icns</string>
+    <key>CFBundleIdentifier</key><string>edu.unlv.protrack3d.source</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+PLIST
+    PYTHON="$BUNDLE/Contents/MacOS/ProTrack3D"
+fi
 LOG="${TMPDIR:-/tmp}/protrack3d-launch.log"
 nohup "$PYTHON" -W ignore -m protrack3d.app > "$LOG" 2>&1 &
 APP=$!
