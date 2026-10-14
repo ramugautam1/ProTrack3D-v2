@@ -16,7 +16,8 @@ plotting = ['matplotlib.backends.backend_agg', 'matplotlib.backends.backend_pdf'
 icon = os.path.join(SPECPATH, 'ProTrack3D.icns' if sys.platform == 'darwin' else 'ProTrack3D.ico')
 
 a = Analysis([os.path.join(SPECPATH, 'protrack3d_app.py')], pathex=[root], hiddenimports=science + plotting,
-             datas=[(os.path.join(root, 'protrack3d', 'model_catalog.json'), 'protrack3d')],
+             datas=[(os.path.join(root, 'protrack3d', 'model_catalog.json'), 'protrack3d'),
+                    (os.path.join(root, 'protrack3d', 'app', 'icon.png'), os.path.join('protrack3d', 'app'))],
              excludes=['tkinter', 'tensorflow', 'PyQt5', 'PyQt6', 'IPython', 'jupyter', 'notebook', 'pytest'], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='ProTrack3D', console=False,
