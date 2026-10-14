@@ -133,6 +133,7 @@ class Histogram(QWidget):
 class ContrastPanel(Card):
     changed = Signal()  # the display range was changed here
     save_requested = Signal()
+    channel_chosen = Signal(int)  # the channel the sliders should adjust
 
     SLIDERS = [('Minimum', 'set_minimum', 'Everything at or below this value is black'),
                ('Maximum', 'set_maximum', 'Everything at or above this value is white'),
@@ -143,6 +144,13 @@ class ContrastPanel(Card):
         super().__init__('Brightness & contrast', margins=14, spacing=10)
         self.setFixedWidth(280)
         self.levels, self.plane, self.key = None, None, None
+        self.picker = QWidget()  # one button per channel, shown for files with several channels
+        self.picker_row = QHBoxLayout(self.picker)
+        self.picker_row.setContentsMargins(0, 0, 0, 0)
+        self.picker_row.setSpacing(4)
+        self.picker_buttons = []
+        self.picker.hide()
+        self.add(self.picker)
         self.histogram = self.add(Histogram(theme))
         fields = QHBoxLayout()
         self.low_field, self.high_field = self._field('Black at this value. Type a number and press Return.'), \
@@ -179,6 +187,33 @@ class ContrastPanel(Card):
         self.box.addWidget(save)
         self.box.addStretch(1)
         self.setEnabled(False)
+
+    def set_channels(self, names, colours, active):
+        """One button per channel, so the sliders can be pointed at any of them; hidden for a single channel."""
+        from PySide6.QtGui import QIcon, QPixmap
+        for b in self.picker_buttons:
+            b.hide()
+            b.setParent(None)
+            b.deleteLater()
+        self.picker_buttons = []
+        while self.picker_row.count():
+            self.picker_row.takeAt(0)
+        for i, (name, colour) in enumerate(zip(names, colours)):
+            b = button(f'C{i + 1}', 'ghost', tip=f'Adjust channel {i + 1}' + (f' ({name})' if name else ''))
+            dot = QPixmap(10, 10)
+            dot.fill(QColor(*colour))
+            b.setIcon(QIcon(dot))
+            b.setCheckable(True)
+            b.setChecked(i == active)
+            b.clicked.connect(lambda _=False, c=i: self.channel_chosen.emit(c))
+            self.picker_row.addWidget(b)
+            self.picker_buttons.append(b)
+        self.picker_row.addStretch(1)
+        self.picker.setVisible(len(names) > 1)
+
+    def set_active(self, active):
+        for i, b in enumerate(self.picker_buttons):
+            b.setChecked(i == active)
 
     def _field(self, tip):
         field = QLineEdit()

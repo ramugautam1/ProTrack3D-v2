@@ -23,7 +23,10 @@ class Updater(QObject):
 
     def _set(self, state, error=''):
         self.state, self.error = state, error
-        self.changed.emit()
+        try:
+            self.changed.emit()
+        except RuntimeError:  # the window was closed while a check was still running
+            pass
 
     def check(self, quiet=False):
         """Ask the engine whether a newer version is published. A quiet check (the one at start-up) says nothing when it fails."""
