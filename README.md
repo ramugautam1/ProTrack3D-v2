@@ -15,7 +15,7 @@ It runs on Windows, Mac and Linux. It uses your GPU if you have one (NVIDIA, or 
 
 ## Install
 
-1. Install Miniforge. Click through the installer, keep the defaults.
+1. Install Miniforge. On Windows and Mac, click through the installer and keep the defaults. On Linux, run the file you downloaded in a terminal (`bash Miniforge3-Linux-x86_64.sh`) and answer yes.
 2. Get ProTrack3D. On this page click **Code**, then **Download ZIP**, and unzip it somewhere you will find it again. If you use git:
 
 ```bash
@@ -30,6 +30,10 @@ git clone https://github.com/ramugautam1/ProTrack3D-v2.git
 The first start takes a few minutes. It is downloading and setting things up. It only does this once. After that it opens in a few seconds.
 
 On a Mac, the first time, macOS may refuse to open the file because it came from the internet. If it does, open System Settings > Privacy & Security, scroll down, and press **Open Anyway**. Or open Terminal, drag the file into it, and press Return.
+
+On Windows, the first time, Windows may say it protected your PC. Press **More info**, then **Run anyway**. The first start puts ProTrack3D in the Start menu, so after that you can start it from there. If the computer has an NVIDIA card, the setup takes the GPU version of PyTorch by itself (a bigger download).
+
+On Linux, the first start puts ProTrack3D in your applications menu. If it stops and says Qt is missing libraries, it prints the command that installs them. Run that and start again. NVIDIA cards work with the normal NVIDIA driver.
 
 4. Get the models. In the app go to **Models** and press **Download published models**. That is about 500 MB.
 
@@ -225,6 +229,7 @@ python -m protrack3d import-model old.npz
 - **A job says Failed.** Press **Log** on that job, or open the console. The last lines say why. Most often: the disk is full, or the image has more than one channel.
 - **Segmentation finds nothing, or finds everything.** Wrong model for this protein. Try another one, or train your own.
 - **It is very slow.** Look at the bottom left of the window. If it says CPU, it is not using a GPU. On Windows with an NVIDIA card, update the NVIDIA driver and set it up again: delete the `protrack3d-torch` environment (`conda env remove -n protrack3d-torch`) and start the app.
+- **Windows: a job fails saying a file or folder was not found.** Windows limits how long a file path can be, and tracking makes long folder names out of the image name. Put your images in a short folder, like `C:\data`, and give them short names.
 - **Out of disk in the middle of tracking.** Free space, then run Tracking again on its own. You do not need to redo the segmentation.
 
 Still stuck? Open an issue on this page. Copy the console text into it. That text is what we need.

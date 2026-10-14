@@ -25,6 +25,28 @@ fi
 # Start the app on its own, so this window can be closed.
 PYTHON="$(conda run -n "$ENV_NAME" python -c 'import sys; print(sys.executable)')"
 
+# An update made from inside the app may have left new packages to install.
+if [ -f .protrack3d_update_pending ]; then
+    echo "Finishing an update: installing new packages."
+    "$PYTHON" -m pip install -r requirements.txt && rm -f .protrack3d_update_pending
+fi
+
+# On Linux, an entry in the applications menu, with the icon. Rewritten each start, so it follows the folder if it moves.
+if [ "$(uname)" = "Linux" ]; then
+    APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    mkdir -p "$APPS" && cat > "$APPS/protrack3d.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=ProTrack3D
+Comment=3D segmentation and tracking of protein clusters
+Exec="$PWD/ProTrack3D_app.sh"
+Icon=$PWD/protrack3d/app/icon.png
+Terminal=false
+Categories=Science;Biology;
+StartupWMClass=protrack3d
+DESKTOP
+fi
+
 # On macOS, Python is started through a small app bundle, so the Dock shows ProTrack3D and its icon, not Python.
 if [ "$(uname)" = "Darwin" ]; then
     BUNDLE="$PWD/.launcher/ProTrack3D.app"
@@ -56,5 +78,12 @@ if kill -0 "$APP" 2>/dev/null; then
 else
     echo "ProTrack3D did not start:"
     cat "$LOG"
+    if grep -q -i "xcb" "$LOG"; then
+        echo
+        echo "Qt is missing some system libraries. On Ubuntu or Debian, install them with:"
+        echo "    sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libegl1"
+        echo "On Fedora:  sudo dnf install xcb-util-cursor libxkbcommon-x11"
+        echo "Then start ProTrack3D again."
+    fi
     exit 1
 fi

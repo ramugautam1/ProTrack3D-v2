@@ -23,6 +23,13 @@ def _model_path(name):
 
 
 def main(argv=None):
+    # Windows writes to a pipe in its own code page, which cannot hold every character the engine prints
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError):
+            pass
+    os.environ.setdefault('MPLBACKEND', 'Agg')  # plots are only saved, never shown; no window system is needed
     parser = argparse.ArgumentParser(prog='protrack3d', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--json', action='store_true', help='print progress as JSON lines')
     sub = parser.add_subparsers(dest='command', required=True)
