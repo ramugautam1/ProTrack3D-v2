@@ -109,7 +109,9 @@ Your original image is never changed.
 
 **Viewer.** Drop the image (`.tif`, `.nii` or `.czi`) anywhere on the page; on the picture is fine. Scroll the mouse wheel to move through z. Drag the time slider or press play.
 
-Under **Show** there is a checkbox for each thing you can see. If the file has several channels, there is one per channel (C1, C2, ... with the dye name from the file). Tick one and it is shown in grey. Tick several and they are mixed, each in its own colour, like ImageJ's composite view. **Mask** and **Tracks** show up when the results are next to the image. With Tracks on, every object has its own colour; click an object and its whole family lights up.
+Under **Show** there is a checkbox for each thing you can see. If the file has several channels, there is one per channel (C1, C2, ... with the dye name from the file). Tick one and it is shown in grey. Tick several and they are mixed, each in its own colour, like ImageJ's composite view. **Mask** and **Tracks** show up when the results are next to the image. The little colour square next to Mask changes the mask's colour, if it is hard to see. With Tracks on, every object has its own colour; click an object and its whole family lights up.
+
+**Colours** in the brightness and contrast panel colours the grey values, like ImageJ's lookup tables: Grays, Red, Green, Blue, Cyan, Magenta, Yellow, Fire, Spectrum, 16 colors, and Inverted. Auto is grey for a channel on its own and the channel's colour when channels are mixed. It only changes what you see; Save image saves the values, not the colours.
 
 To zoom, hold Ctrl (or Cmd) and scroll, or pinch on a trackpad, or use the **+** and **−** buttons on the picture. It zooms on the spot under the pointer. Drag to move around. Double-click, or **Fit**, shows the whole image again. A plain scroll still moves through z.
 

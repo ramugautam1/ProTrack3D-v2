@@ -89,6 +89,7 @@ class Stack:
         if os.path.isfile(tracked):
             self.tracks = nib.load(tracked).dataobj
         self._levels = {}
+        self.luts = {}  # channel -> colour table name; Auto when not chosen
 
     @property
     def channels(self):
@@ -369,6 +370,7 @@ class ViewerPage(Page):
         self.contrast.changed.connect(self.render)
         self.contrast.save_requested.connect(self.save_adjusted)
         self.contrast.channel_chosen.connect(self.adjust_channel)
+        self.contrast.lut_chosen.connect(self.choose_lut)
         self.reopen = None  # (job, image) while the image on screen is being replaced
         ctx.jobs.finished.connect(self.save_finished)
         middle = QHBoxLayout()
@@ -530,10 +532,11 @@ class ViewerPage(Page):
             self.contrast.set_channels([], [], 0)
             while self.layer_row.count():
                 item = self.layer_row.takeAt(0)
-                if item.widget():
-                    item.widget().hide()
-                    item.widget().setParent(None)
-                    item.widget().deleteLater()
+                widget = item.widget()
+                if widget:
+                    widget.hide()
+                    widget.setParent(None)
+                    widget.deleteLater()
             self.channel_boxes, self.mask_box, self.tracks_box = [], None, None
             return
         info, s = self.stack.info, self.stack
@@ -563,10 +566,11 @@ class ViewerPage(Page):
         s = self.stack
         while self.layer_row.count():
             item = self.layer_row.takeAt(0)
-            if item.widget():  # off screen now: deleteLater alone leaves it drawn until the event loop gets to it
-                item.widget().hide()
-                item.widget().setParent(None)
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:  # off screen now: deleteLater alone leaves it drawn until the event loop gets to it
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
 
         def box(label, tip, checked, colour=None):
             b = QCheckBox(label)
@@ -589,16 +593,86 @@ class ViewerPage(Page):
                 short = name if len(name) <= self.NAME_LENGTH else name[:self.NAME_LENGTH - 1] + '…'
                 label = f'C{i + 1}: {short}' if name else f'C{i + 1}'
             tip = f'Channel {i + 1}' + (f': {name}' if name else '') if s.channels > 1 else 'The image itself'
-            self.channel_boxes.append(box(label, tip, i in shown, self.colours_by_channel[i] if s.channels > 1 else None))
-        accent = self.ctx.theme.colors['accent'].lstrip('#')
+            self.channel_boxes.append(box(label, tip, i in shown, self.swatch_colour(i) if s.channels > 1 else None))
         has_mask = s.mask is not None or s.mask_tif is not None
-        self.mask_box = box('Mask', 'The segmentation mask', has_mask and s.tracks is None,
-                            tuple(int(accent[i:i + 2], 16) for i in (0, 2, 4))) if has_mask else None
+        self.mask_box = box('Mask', 'The segmentation mask', has_mask and s.tracks is None) if has_mask else None
+        if has_mask:  # the checkbox and its colour button move together when the row wraps
+            pair = QWidget()
+            line = QHBoxLayout(pair)
+            line.setContentsMargins(0, 0, 0, 0)
+            line.setSpacing(2)
+            self.layer_row.removeWidget(self.mask_box)
+            line.addWidget(self.mask_box)
+            self.mask_colour_button = button('', 'ghost', tip='Colour of the mask')
+            self.mask_colour_button.setMenu(self.mask_menu())
+            self.paint_mask_button()
+            line.addWidget(self.mask_colour_button)
+            self.layer_row.addWidget(pair)
         self.tracks_box = box('Tracks', 'Tracked objects, each in its own colour. Click one to pick out its family.',
                               True) if s.tracks is not None else None
         self.layer_row.invalidate()
         self.layers.updateGeometry()
         self.contrast.set_channels(s.channel_names, self.colours_by_channel, s.channel)
+        self.contrast.show_lut(s.luts.get(s.channel, 'Auto'), self.auto_colour(s.channel))
+
+    MASK_COLOURS = [('Teal', '#35C6AE'), ('Red', '#FF3B30'), ('Green', '#34C759'), ('Blue', '#2F7BFF'),
+                    ('Yellow', '#FFD60A'), ('Cyan', '#32D7FF'), ('Magenta', '#FF2DCB'), ('Orange', '#FF9500'),
+                    ('White', '#FFFFFF')]
+
+    def mask_colour(self):
+        return QColor(QSettings().value('mask_colour', self.MASK_COLOURS[0][1]))
+
+    def mask_menu(self):
+        from PySide6.QtGui import QIcon, QPixmap
+        from PySide6.QtWidgets import QColorDialog, QMenu
+        menu = QMenu(self)
+        for name, value in self.MASK_COLOURS:
+            swatch = QPixmap(12, 12)
+            swatch.fill(QColor(value))
+            menu.addAction(QIcon(swatch), name, lambda v=value: self.set_mask_colour(QColor(v)))
+        menu.addSeparator()
+
+        def other():
+            colour = QColorDialog.getColor(self.mask_colour(), self.window(), 'Mask colour')
+            if colour.isValid():
+                self.set_mask_colour(colour)
+        menu.addAction('Other…', other)
+        return menu
+
+    def set_mask_colour(self, colour):
+        QSettings().setValue('mask_colour', colour.name())
+        self.paint_mask_button()
+        if self.mask_box is not None and not self.mask_box.isChecked():
+            self.mask_box.setChecked(True)  # choosing a colour means wanting to see it
+        self.render()
+
+    def paint_mask_button(self):
+        from PySide6.QtGui import QIcon, QPixmap
+        swatch = QPixmap(14, 14)
+        swatch.fill(self.mask_colour())
+        self.mask_colour_button.setIcon(QIcon(swatch))
+
+    def auto_colour(self, channel):
+        """What Auto looks like for a channel on the Colours strip: grey for an image with one channel."""
+        return (255, 255, 255) if self.stack.channels == 1 else self.colours_by_channel[channel]
+
+    def swatch_colour(self, channel):
+        from .palette import AUTO, lut_end_colour
+        return lut_end_colour(self.stack.luts.get(channel, AUTO), self.colours_by_channel[channel])
+
+    def choose_lut(self, name):
+        """A colour table for the channel being adjusted."""
+        from PySide6.QtGui import QIcon, QPixmap
+        if not self.stack:
+            return
+        c = self.stack.channel
+        self.stack.luts[c] = name
+        if self.stack.channels > 1:
+            swatch = QPixmap(10, 10)
+            swatch.fill(QColor(*self.swatch_colour(c)))
+            self.channel_boxes[c].setIcon(QIcon(swatch))
+            self.contrast.picker_buttons[c].setIcon(QIcon(swatch))
+        self.render()
 
     def shown_channels(self):
         return [i for i, b in enumerate(self.channel_boxes) if b.isChecked()]
@@ -626,8 +700,10 @@ class ViewerPage(Page):
     def adjust_channel(self, index):
         """Point the brightness and contrast panel at a channel."""
         if self.stack and 0 <= index < self.stack.channels:
+            from .palette import AUTO
             self.stack.channel = index
             self.contrast.set_active(index)
+            self.contrast.show_lut(self.stack.luts.get(index, AUTO), self.auto_colour(index))
             self.render()
 
     def show_image(self, path):
@@ -653,16 +729,15 @@ class ViewerPage(Page):
         self.contrast.display(levels, active, (id(s), s.channel, t, z, levels.data_min, levels.data_max))
         shown = self.shown_channels()
         self.planes_shown = {c: (active if c == s.channel else s.plane(t, z, c).astype(np.float32)) for c in shown}
-        if len(shown) == 1:  # one channel: grey, as in ImageJ
-            c = shown[0]
-            rgb = np.repeat((s.levels(c).scale(self.planes_shown[c]) * 255).astype(np.uint8)[..., None], 3, axis=2)
-        else:  # several: each in its colour, added up
-            mix = np.zeros(active.shape + (3,), np.float32)
-            for c in shown:
-                plane = self.planes_shown[c]
-                s.levels(c).include(plane.min(), plane.max())
-                mix += s.levels(c).scale(plane)[..., None] * np.array(self.colours_by_channel[c], np.float32)
-            rgb = np.clip(mix, 0, 255).astype(np.uint8)
+        from .palette import AUTO, channel_lut
+        # each channel through its colour table (Auto: grey alone, its own colour mixed); several are added up
+        mix = np.zeros(active.shape + (3,), np.float32)
+        for c in shown:
+            plane = self.planes_shown[c]
+            s.levels(c).include(plane.min(), plane.max())
+            table = channel_lut(s.luts.get(c, AUTO), self.colours_by_channel[c], alone=len(shown) == 1)
+            mix += table[(s.levels(c).scale(plane) * 255).astype(np.uint8)]
+        rgb = np.clip(mix, 0, 255).astype(np.uint8)
         a = self.opacity.value() / 100
         self.labels = None
         for kind, b in (('mask', self.mask_box), ('tracks', self.tracks_box)):
@@ -673,8 +748,8 @@ class ViewerPage(Page):
                 continue
             on = labels > 0
             if kind == 'mask':
-                accent = self.ctx.theme.colors['accent'].lstrip('#')
-                colour = np.array([int(accent[i:i + 2], 16) for i in (0, 2, 4)], np.float32)
+                m = self.mask_colour()
+                colour = np.array([m.red(), m.green(), m.blue()], np.float32)
                 rgb[on] = (rgb[on] * (1 - a) + colour * a).astype(np.uint8)
             else:
                 ids = labels[on].astype(np.int64)

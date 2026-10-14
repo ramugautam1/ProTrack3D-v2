@@ -3,9 +3,9 @@ over it, Minimum / Maximum / Brightness / Contrast sliders, Auto and Reset. Only
 import os
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QDoubleValidator, QPainter, QPen
-from PySide6.QtWidgets import (QButtonGroup, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
                                QRadioButton, QSlider, QVBoxLayout, QWidget)
 
 from .widgets import Card, ElidedLabel, button, text
@@ -96,7 +96,7 @@ class Histogram(QWidget):
     def __init__(self, theme):
         super().__init__()
         self.theme, self.counts, self.levels = theme, None, None
-        self.setFixedHeight(96)
+        self.setFixedHeight(76)
 
     def paintEvent(self, event):
         c = self.theme.colors
@@ -134,6 +134,7 @@ class ContrastPanel(Card):
     changed = Signal()  # the display range was changed here
     save_requested = Signal()
     channel_chosen = Signal(int)  # the channel the sliders should adjust
+    lut_chosen = Signal(str)  # a colour table for that channel
 
     SLIDERS = [('Minimum', 'set_minimum', 'Everything at or below this value is black'),
                ('Maximum', 'set_maximum', 'Everything at or above this value is white'),
@@ -141,7 +142,7 @@ class ContrastPanel(Card):
                ('Contrast', 'set_contrast', 'Narrows or widens the range around its centre')]
 
     def __init__(self, theme):
-        super().__init__('Brightness & contrast', margins=14, spacing=10)
+        super().__init__('Brightness & contrast', margins=14, spacing=6)
         self.setFixedWidth(280)
         self.levels, self.plane, self.key = None, None, None
         self.picker = QWidget()  # one button per channel, shown for files with several channels
@@ -151,6 +152,16 @@ class ContrastPanel(Card):
         self.picker_buttons = []
         self.picker.hide()
         self.add(self.picker)
+        row = QHBoxLayout()
+        row.addWidget(text('Colours', 'label'))
+        self.lut = QComboBox()
+        self.lut.setToolTip('How grey values are coloured, as in ImageJ\'s lookup tables. Auto is grey for a channel '
+                            'shown alone and the channel\'s own colour when channels are mixed.')
+        self.lut.setIconSize(QSize(56, 10))
+        self._fill_luts()
+        self.lut.activated.connect(lambda i: self.lut_chosen.emit(self.lut.itemData(i)))
+        row.addWidget(self.lut, 1)
+        self.box.addLayout(row)
         self.histogram = self.add(Histogram(theme))
         fields = QHBoxLayout()
         self.low_field, self.high_field = self._field('Black at this value. Type a number and press Return.'), \
@@ -162,7 +173,7 @@ class ContrastPanel(Card):
         self.box.addLayout(fields)
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        grid.setVerticalSpacing(4)
         self.sliders = []
         for row, (label, method, tip) in enumerate(self.SLIDERS):
             slider = QSlider(Qt.Horizontal)
@@ -187,6 +198,27 @@ class ContrastPanel(Card):
         self.box.addWidget(save)
         self.box.addStretch(1)
         self.setEnabled(False)
+
+    def _fill_luts(self, colour=(255, 255, 255)):
+        """The tables, each with a strip showing it; Auto's strip shows the channel's own colour."""
+        from PySide6.QtGui import QIcon, QImage, QPixmap
+        from .palette import AUTO, LUTS, channel_lut
+        current = self.lut.currentData()
+        self.lut.clear()
+        for name in [AUTO] + list(LUTS):
+            table = channel_lut(name, colour, alone=False)
+            strip = np.ascontiguousarray(np.repeat(table[None], 10, axis=0))
+            image = QImage(strip.data, 256, 10, 256 * 3, QImage.Format_RGB888).copy()
+            self.lut.addItem(QIcon(QPixmap.fromImage(image).scaled(56, 10)), name, name)
+        if current:
+            self.lut.setCurrentIndex(max(0, self.lut.findData(current)))
+
+    def show_lut(self, name, colour):
+        """Show the table chosen for the channel being adjusted, and that channel's colour on the Auto strip."""
+        self.lut.blockSignals(True)
+        self._fill_luts(colour)
+        self.lut.setCurrentIndex(max(0, self.lut.findData(name)))
+        self.lut.blockSignals(False)
 
     def set_channels(self, names, colours, active):
         """One button per channel, so the sliders can be pointed at any of them; hidden for a single channel."""
