@@ -6,7 +6,7 @@ import os
 import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSlider, QVBoxLayout, QWidget
 
 from .. import stages
 from ..segmentation import image_base, read_image_info, segmentation_folder
@@ -15,7 +15,7 @@ from .contrast import ContrastPanel, Levels, SaveDialog
 from .jobs import Job
 from .pages import IMAGE_FILTERS, Page
 from .palette import id_colours
-from .widgets import Card, ElidedLabel, PathField, button, text
+from .widgets import Card, ElidedLabel, FlowLayout, PathField, button, text
 
 
 def rename_active(widget, active):
@@ -38,7 +38,8 @@ class Stack:
     """Lazy access to an image and, when they exist next to it, its mask and tracked labels.
 
     Movies (.tif, .nii) have one channel and are read from disk as they are shown. Files with several channels
-    (.czi, or a .tif with a channel axis) are held in memory and shown one channel at a time.
+    (.czi, or a .tif with a channel axis) are held in memory; any of their channels can be shown, alone or together.
+    `channel` is the one the brightness and contrast panel adjusts.
     """
 
     def __init__(self, path):
@@ -95,31 +96,29 @@ class Stack:
 
     def all_levels(self):
         """The display range of every channel, as each is (or would be) shown."""
-        shown, ranges = self.channel, []
-        for self.channel in range(self.channels):
-            ranges.append(self.levels())
-        self.channel = shown
-        return ranges
+        return [self.levels(c) for c in range(self.channels)]
 
-    def levels(self):
-        """Display range of the current channel. It starts fitted to the middle plane and is the user's to change."""
-        if self.channel not in self._levels:
+    def levels(self, channel=None):
+        """Display range of a channel (default: the one being adjusted). It starts fitted to the middle plane and is
+        the user's to change."""
+        channel = self.channel if channel is None else channel
+        if channel not in self._levels:
             t, z = self.info['t'], self.info['z']
-            mid = self.plane(t // 2, z // 2)
+            mid = self.plane(t // 2, z // 2, channel)
             whole = np.issubdtype(mid.dtype, np.integer)
             if mid.dtype == np.uint8:
                 data_min, data_max = 0, 255
             else:  # the range of the data, from the first, middle and last timepoints; render() widens it if needed
-                planes = [self.plane(i, k) for i in sorted({0, t // 2, t - 1}) for k in range(z)]
+                planes = [self.plane(i, k, channel) for i in sorted({0, t // 2, t - 1}) for k in range(z)]
                 data_min, data_max = min(float(p.min()) for p in planes), max(float(p.max()) for p in planes)
             low = float(np.percentile(mid, 1))
-            self._levels[self.channel] = Levels(data_min, data_max, low, max(float(np.percentile(mid, 99.9)), low + 1), whole)
-        return self._levels[self.channel]
+            self._levels[channel] = Levels(data_min, data_max, low, max(float(np.percentile(mid, 99.9)), low + 1), whole)
+        return self._levels[channel]
 
-    def plane(self, t, z):
-        """Image plane as (y, x)."""
+    def plane(self, t, z, channel=None):
+        """Image plane as (y, x), of `channel` (default: the one being adjusted)."""
         if self._multi is not None:
-            return self._multi[t, self.channel, z]
+            return self._multi[t, self.channel if channel is None else channel, z]
         if self._tif is not None:
             return np.asarray(self._tif[t, z])
         vol = self._nii
@@ -351,7 +350,7 @@ class Canvas(QWidget):
 
 
 class ViewerPage(Page):
-    OVERLAYS = [('Image only', None), ('Segmentation mask', 'mask'), ('Tracked objects', 'tracks')]
+    NAME_LENGTH = 16  # channel names are shortened on their checkboxes so a row of them fits; the tooltip has the rest
 
     def __init__(self, ctx):
         super().__init__(ctx, 'Viewer', None)
@@ -369,6 +368,7 @@ class ViewerPage(Page):
         self.contrast = ContrastPanel(ctx.theme)
         self.contrast.changed.connect(self.render)
         self.contrast.save_requested.connect(self.save_adjusted)
+        self.contrast.channel_chosen.connect(self.adjust_channel)
         self.reopen = None  # (job, image) while the image on screen is being replaced
         ctx.jobs.finished.connect(self.save_finished)
         middle = QHBoxLayout()
@@ -383,10 +383,6 @@ class ViewerPage(Page):
         self.play = button('', tip='Play through time')
         self.play.setCheckable(True)
         self.play.toggled.connect(self.toggle_play)
-        self.overlay = QComboBox()
-        for label, _ in self.OVERLAYS:
-            self.overlay.addItem(label)
-        self.overlay.currentIndexChanged.connect(self.render)
         self.opacity = QSlider(Qt.Horizontal)
         self.opacity.setRange(10, 100)
         self.opacity.setValue(55)
@@ -400,16 +396,18 @@ class ViewerPage(Page):
             for w in extra:
                 row.addWidget(w)
             card.box.addLayout(row)
+        self.layers = QWidget()  # a checkbox per channel, and for the mask and the tracks when they were found
+        self.layer_row = FlowLayout(self.layers, spacing=18)  # wraps onto a second line when there are many
+        self.layers.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.channel_boxes, self.mask_box, self.tracks_box = [], None, None
         row = QHBoxLayout()
-        self.channel_label = text('Channel', 'label')
-        self.channel_box = QComboBox()
-        self.channel_box.currentIndexChanged.connect(self.set_channel)
-        for wdg in (self.channel_label, self.channel_box):
-            wdg.hide()
-            row.addWidget(wdg)
-        row.addWidget(text('Show', 'label'))
-        row.addWidget(self.overlay)
-        row.addWidget(text('Opacity', 'label'))
+        show = text('Show', 'label')
+        show.setFixedWidth(150)
+        row.addWidget(show, 0, Qt.AlignTop)
+        row.addWidget(self.layers, 1)
+        card.box.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(text('Overlay opacity', 'label'))
         row.addWidget(self.opacity)
         self.readout = ElidedLabel('', 'hint')  # takes the room that is left, so a long readout cannot widen the page
         row.addWidget(self.readout, 1)
@@ -529,6 +527,14 @@ class ViewerPage(Page):
         if not self.stack:
             self.canvas.clear()
             self.contrast.display(None, None, None)
+            self.contrast.set_channels([], [], 0)
+            while self.layer_row.count():
+                item = self.layer_row.takeAt(0)
+                if item.widget():
+                    item.widget().hide()
+                    item.widget().setParent(None)
+                    item.widget().deleteLater()
+            self.channel_boxes, self.mask_box, self.tracks_box = [], None, None
             return
         info, s = self.stack.info, self.stack
         found = [n for n, d in (('mask', s.mask if s.mask is not None else s.mask_tif), ('tracks', s.tracks)) if d is not None]
@@ -537,28 +543,91 @@ class ViewerPage(Page):
             parts.append(f'{s.channels} channels')
         parts.append('found ' + ' and '.join(found) if found else 'no mask or tracks next to this image')
         self.source.set_detail('  ·  '.join(parts + s.notes))
-        self.channel_box.blockSignals(True)
-        self.channel_box.clear()
-        for i, name in enumerate(s.channel_names):
-            self.channel_box.addItem(f'{i + 1}  ·  {name}' if name else str(i + 1))
-        # the Armadillo mask belongs to the second channel, so start there when that mask was found
-        s.channel = 1 if s.channels > 1 and s.mask is None and s.mask_tif is not None and s.mask_name.endswith('_ARM_SEG.tif') else 0
-        self.channel_box.setCurrentIndex(s.channel)
-        self.channel_box.blockSignals(False)
-        for wdg in (self.channel_label, self.channel_box):
-            wdg.setVisible(s.channels > 1)
+        # the Armadillo mask belongs to the second channel, so start with that channel alone when that mask was found
+        arm = s.channels > 1 and s.mask is None and s.mask_tif is not None and s.mask_name.endswith('_ARM_SEG.tif')
+        s.channel = 1 if arm else 0
+        self.build_layers([s.channel] if arm else range(s.channels))
         for slider, n in ((self.t_slider, info['t']), (self.z_slider, info['z'])):
             slider.blockSignals(True)
             slider.setRange(0, n - 1)
             slider.blockSignals(False)
         self.t_slider.setValue(s.seg_start - 1)
         self.z_slider.setValue(info['z'] // 2)
-        self.overlay.setCurrentIndex(2 if s.tracks is not None else 1 if (s.mask is not None or s.mask_tif is not None) else 0)
         self.render()
 
-    def set_channel(self, index):
+    def build_layers(self, shown):
+        """Checkboxes for what can be drawn: each channel (or the image, if it has one), the mask and the tracks."""
+        from PySide6.QtGui import QIcon, QPixmap
+        from PySide6.QtWidgets import QCheckBox
+        from .palette import channel_colour
+        s = self.stack
+        while self.layer_row.count():
+            item = self.layer_row.takeAt(0)
+            if item.widget():  # off screen now: deleteLater alone leaves it drawn until the event loop gets to it
+                item.widget().hide()
+                item.widget().setParent(None)
+                item.widget().deleteLater()
+
+        def box(label, tip, checked, colour=None):
+            b = QCheckBox(label)
+            b.setToolTip(tip)
+            b.setChecked(checked)
+            if colour is not None:  # a swatch of the colour this layer is drawn in
+                swatch = QPixmap(10, 10)
+                swatch.fill(QColor(*colour))
+                b.setIcon(QIcon(swatch))
+            b.toggled.connect(self.layers_changed)
+            self.layer_row.addWidget(b)
+            return b
+
+        self.colours_by_channel = [channel_colour(name, i) for i, name in enumerate(s.channel_names)]
+        self.channel_boxes = []
+        for i, name in enumerate(s.channel_names):
+            if s.channels == 1:
+                label = 'Image'
+            else:
+                short = name if len(name) <= self.NAME_LENGTH else name[:self.NAME_LENGTH - 1] + '…'
+                label = f'C{i + 1}: {short}' if name else f'C{i + 1}'
+            tip = f'Channel {i + 1}' + (f': {name}' if name else '') if s.channels > 1 else 'The image itself'
+            self.channel_boxes.append(box(label, tip, i in shown, self.colours_by_channel[i] if s.channels > 1 else None))
+        accent = self.ctx.theme.colors['accent'].lstrip('#')
+        has_mask = s.mask is not None or s.mask_tif is not None
+        self.mask_box = box('Mask', 'The segmentation mask', has_mask and s.tracks is None,
+                            tuple(int(accent[i:i + 2], 16) for i in (0, 2, 4))) if has_mask else None
+        self.tracks_box = box('Tracks', 'Tracked objects, each in its own colour. Click one to pick out its family.',
+                              True) if s.tracks is not None else None
+        self.layer_row.invalidate()
+        self.layers.updateGeometry()
+        self.contrast.set_channels(s.channel_names, self.colours_by_channel, s.channel)
+
+    def shown_channels(self):
+        return [i for i, b in enumerate(self.channel_boxes) if b.isChecked()]
+
+    def overlay_kind(self):
+        """What a click picks from: the tracks when they are shown, else the mask when it is."""
+        if self.tracks_box is not None and self.tracks_box.isChecked():
+            return 'tracks'
+        if self.mask_box is not None and self.mask_box.isChecked():
+            return 'mask'
+        return None
+
+    def layers_changed(self, *_):
+        if not self.stack:
+            return
+        shown = self.shown_channels()
+        sender = self.sender()
+        if sender in self.channel_boxes and sender.isChecked():  # a channel just turned on is the one to adjust
+            self.adjust_channel(self.channel_boxes.index(sender))
+        elif shown and self.stack.channel not in shown:
+            self.adjust_channel(shown[0])
+        else:
+            self.render()
+
+    def adjust_channel(self, index):
+        """Point the brightness and contrast panel at a channel."""
         if self.stack and 0 <= index < self.stack.channels:
             self.stack.channel = index
+            self.contrast.set_active(index)
             self.render()
 
     def show_image(self, path):
@@ -577,27 +646,46 @@ class ViewerPage(Page):
         t, z, s = self.t_slider.value(), self.z_slider.value(), self.stack
         self.t_label.setText(f"Timepoint {t + 1} of {s.info['t']}")
         self.z_label.setText(f"Slice {z + 1} of {s.info['z']}")
-        plane = s.plane(t, z).astype(np.float32)
+        # the channel being adjusted feeds the brightness and contrast panel, shown or not
+        active = s.plane(t, z).astype(np.float32)
         levels = s.levels()
-        levels.include(plane.min(), plane.max())
-        self.contrast.display(levels, plane, (id(s), s.channel, t, z, levels.data_min, levels.data_max))
-        rgb = np.repeat((levels.scale(plane) * 255).astype(np.uint8)[..., None], 3, axis=2)
-        kind = self.OVERLAYS[self.overlay.currentIndex()][1]
-        self.labels = s.overlay(kind, t, z) if kind else None
-        if self.labels is not None and self.labels.shape == plane.shape:
-            on = self.labels > 0
-            a = self.opacity.value() / 100
+        levels.include(active.min(), active.max())
+        self.contrast.display(levels, active, (id(s), s.channel, t, z, levels.data_min, levels.data_max))
+        shown = self.shown_channels()
+        self.planes_shown = {c: (active if c == s.channel else s.plane(t, z, c).astype(np.float32)) for c in shown}
+        if len(shown) == 1:  # one channel: grey, as in ImageJ
+            c = shown[0]
+            rgb = np.repeat((s.levels(c).scale(self.planes_shown[c]) * 255).astype(np.uint8)[..., None], 3, axis=2)
+        else:  # several: each in its colour, added up
+            mix = np.zeros(active.shape + (3,), np.float32)
+            for c in shown:
+                plane = self.planes_shown[c]
+                s.levels(c).include(plane.min(), plane.max())
+                mix += s.levels(c).scale(plane)[..., None] * np.array(self.colours_by_channel[c], np.float32)
+            rgb = np.clip(mix, 0, 255).astype(np.uint8)
+        a = self.opacity.value() / 100
+        self.labels = None
+        for kind, b in (('mask', self.mask_box), ('tracks', self.tracks_box)):
+            if b is None or not b.isChecked():
+                continue
+            labels = s.overlay(kind, t, z)
+            if labels is None or labels.shape != active.shape:
+                continue
+            on = labels > 0
             if kind == 'mask':
                 accent = self.ctx.theme.colors['accent'].lstrip('#')
                 colour = np.array([int(accent[i:i + 2], 16) for i in (0, 2, 4)], np.float32)
                 rgb[on] = (rgb[on] * (1 - a) + colour * a).astype(np.uint8)
             else:
-                ids = self.labels[on].astype(np.int64)
+                ids = labels[on].astype(np.int64)
                 colour = self.colours[ids % len(self.colours)].astype(np.float32)
                 # with a family picked out, its members are drawn solid and everything else is faint
                 alpha = np.where(np.isin(ids, list(self.highlight)), 0.9, 0.18)[:, None] if self.highlight else a
                 rgb[on] = (rgb[on] * (1 - alpha) + colour * alpha).astype(np.uint8)
-        self.plane_shown = plane
+            if kind == self.overlay_kind():
+                self.labels = labels
+        self.plane_shown = active
+        kind = self.overlay_kind()
         self.canvas.marker = None
         if self.focus is not None and kind == 'tracks' and self.labels is not None:
             ys, xs = np.nonzero(self.labels == self.focus)
@@ -609,10 +697,14 @@ class ViewerPage(Page):
     def hover(self, x, y):
         if not self.stack or not (0 <= y < self.plane_shown.shape[0] and 0 <= x < self.plane_shown.shape[1]):
             return
-        parts = [f'x {x}, y {y}', f'intensity {int(self.plane_shown[y, x])}']
+        parts = [f'x {x}, y {y}']
+        planes = getattr(self, 'planes_shown', {})
+        if self.stack.channels == 1 or not planes:
+            parts.append(f'intensity {int(self.plane_shown[y, x])}')
+        else:
+            parts.append('  '.join(f'C{c + 1} {int(p[y, x])}' for c, p in sorted(planes.items())))
         if getattr(self, 'labels', None) is not None and self.labels.shape == self.plane_shown.shape and self.labels[y, x]:
-            kind = self.OVERLAYS[self.overlay.currentIndex()][1]
-            parts.append(f'object {int(self.labels[y, x])}' if kind == 'tracks' else 'inside the mask')
+            parts.append(f'object {int(self.labels[y, x])}' if self.overlay_kind() == 'tracks' else 'inside the mask')
         self.readout.setText('   ·   '.join(parts))
 
     # --- picking objects ---
@@ -637,7 +729,7 @@ class ViewerPage(Page):
 
     def click(self, x, y):
         """Clicking a tracked object picks out its family; clicking the background shows everything again."""
-        if self.stack is None or self.OVERLAYS[self.overlay.currentIndex()][1] != 'tracks' or getattr(self, 'labels', None) is None:
+        if self.stack is None or self.overlay_kind() != 'tracks' or getattr(self, 'labels', None) is None:
             return
         if 0 <= y < self.labels.shape[0] and 0 <= x < self.labels.shape[1]:
             obj = int(self.labels[y, x])
@@ -651,7 +743,8 @@ class ViewerPage(Page):
             return
         self.lineage = lineage
         t = self.stack.time_of(lineage.objects[obj][0])
-        self.overlay.setCurrentIndex(2 if self.stack.tracks is not None else self.overlay.currentIndex())
+        if self.tracks_box is not None:
+            self.tracks_box.setChecked(True)
         self.t_slider.setValue(t)
         z = self.stack.best_slice(obj, t)
         if z is not None:

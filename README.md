@@ -103,11 +103,13 @@ Your original image is never changed.
 
 ## Looking at results
 
-**Viewer.** Drop the image (`.tif`, `.nii` or `.czi`) anywhere on the page; on the picture is fine. If the file has several channels, pick the channel at the bottom. Scroll the mouse wheel to move through z. Drag the time slider or press play. Choose "Tracked objects" to see every object in its own colour. Click an object and its whole family lights up.
+**Viewer.** Drop the image (`.tif`, `.nii` or `.czi`) anywhere on the page; on the picture is fine. Scroll the mouse wheel to move through z. Drag the time slider or press play.
+
+Under **Show** there is a checkbox for each thing you can see. If the file has several channels, there is one per channel (C1, C2, ... with the dye name from the file). Tick one and it is shown in grey. Tick several and they are mixed, each in its own colour, like ImageJ's composite view. **Mask** and **Tracks** show up when the results are next to the image. With Tracks on, every object has its own colour; click an object and its whole family lights up.
 
 To zoom, hold Ctrl (or Cmd) and scroll, or pinch on a trackpad, or use the **+** and **−** buttons on the picture. It zooms on the spot under the pointer. Drag to move around. Double-click, or **Fit**, shows the whole image again. A plain scroll still moves through z.
 
-The panel on the right is brightness and contrast, the way ImageJ does it. The picture on top is the histogram of the slice you are looking at; the line over it shows what is drawn black and what is drawn white. Move **Minimum** and **Maximum**, or **Brightness** and **Contrast**, or type the two numbers. **Auto** fits the range to the slice; press it again to cut deeper. **Reset** shows the whole range. Each channel keeps its own setting. This only changes what you see. Your data and the measurements are not changed.
+The panel on the right is brightness and contrast, the way ImageJ does it. The picture on top is the histogram of the slice you are looking at; the line over it shows what is drawn black and what is drawn white. Move **Minimum** and **Maximum**, or **Brightness** and **Contrast**, or type the two numbers. **Auto** fits the range to the slice; press it again to cut deeper. **Reset** shows the whole range. Each channel keeps its own setting; with several channels, the C1, C2, ... buttons at the top of the panel choose which one the sliders change. This only changes what you see. Your data and the measurements are not changed.
 
 **Save image…** writes the image with that brightness and contrast put into the pixel values (what ImageJ calls Apply). It asks: a copy, or replace the original. A copy gets the name of the image with `_BC` added; change it if you like. All timepoints and slices are saved. A `.czi` is saved as a `.czi` that keeps all its metadata, or as a `.tif` if you end the name with `.tif`. (A compressed `.czi` can only be saved as a `.tif`.) Careful with Replace: the measured intensities in that file are gone for good, so do not replace an image you still want to measure.
 

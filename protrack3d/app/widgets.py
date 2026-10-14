@@ -1,10 +1,9 @@
 """Reusable widgets: headings, cards, drop-in path fields, animated progress, page transitions and toasts."""
 import os
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QParallelAnimationGroup, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QParallelAnimationGroup, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QProgressBar,
-                               QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import icons
 
@@ -324,3 +323,59 @@ def spacer():
     w = QWidget()
     w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     return w
+
+
+class FlowLayout(QLayout):
+    """Lays widgets out in a row and wraps them onto the next line when the row is full, so a long list of checkboxes
+    never makes the page wider than the window."""
+
+    def __init__(self, parent=None, spacing=14, line_spacing=6):
+        super().__init__(parent)
+        self.items, self.gap, self.line_gap = [], spacing, line_spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):
+        self.items.append(item)
+
+    def count(self):
+        return len(self.items)
+
+    def itemAt(self, index):
+        return self.items[index] if 0 <= index < len(self.items) else None
+
+    def takeAt(self, index):
+        return self.items.pop(index) if 0 <= index < len(self.items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientations(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._place(QRect(0, 0, width, 0), move=False)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._place(rect, move=True)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self.items:
+            size = size.expandedTo(item.minimumSize())
+        return size
+
+    def _place(self, rect, move):
+        x, y, line = rect.x(), rect.y(), 0
+        for item in self.items:  # every item is placed: one just added is not shown yet but is about to be
+            hint = item.sizeHint()
+            if x + hint.width() > rect.right() + 1 and line > 0:
+                x, y, line = rect.x(), y + line + self.line_gap, 0
+            if move:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + self.gap
+            line = max(line, hint.height())
+        return y + line - rect.y()
