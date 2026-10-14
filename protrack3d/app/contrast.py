@@ -245,14 +245,16 @@ class SaveDialog(QDialog):
     """Asks how to save an image with its brightness and contrast applied: as a copy under a new name, or in place
     of the original. `target` holds the chosen file when the dialog is accepted."""
 
-    def __init__(self, parent, image, ranges, top):
+    def __init__(self, parent, image, ranges, top, czi_problem=None):
         super().__init__(parent)
         self.setWindowTitle('Save image')
         self.setFixedWidth(560)
         self.image, self.target = image, None
         stem, extension = os.path.splitext(os.path.basename(image))
-        self.fixed = extension.lower() == '.czi'  # a .czi cannot be written, so there is only a copy, as .tif
-        self.extension = '.nii' if extension.lower() == '.nii' else '.tif'
+        czi = extension.lower() == '.czi'
+        self.fixed = czi and czi_problem is not None  # a .czi that cannot be rewritten: only a copy, as .tif
+        self.extension = '.nii' if extension.lower() == '.nii' else '.czi' if czi and not self.fixed else '.tif'
+        self.allowed = {'.nii': ('.nii',), '.czi': ('.czi', '.tif', '.tiff')}.get(self.extension, ('.tif', '.tiff'))
         self.folder = os.path.dirname(image)
         box = QVBoxLayout(self)
         box.setContentsMargins(22, 20, 22, 18)
@@ -272,12 +274,16 @@ class SaveDialog(QDialog):
         self.copy.setChecked(True)
         if self.fixed:
             self.replace.setEnabled(False)
-            self.replace.setToolTip('A .czi file cannot be rewritten. The copy is saved as a .tif.')
+            self.replace.setToolTip(f'This .czi cannot be rewritten: {czi_problem}. The copy is saved as a .tif.')
         line = QHBoxLayout()
         line.addWidget(text('Name', 'label'))
         self.name = QLineEdit(stem + '_BC' + self.extension)
         line.addWidget(self.name, 1)
         box.addLayout(line)
+        if czi:
+            box.addWidget(text('A .czi copy keeps all the metadata of the original; only the pixel values change. '
+                               'End the name with .tif to save a .tif instead.' if not self.fixed else
+                               f'This .czi cannot be rewritten ({czi_problem}), so the copy is a .tif.', 'hint', wrap=True))
         line = QHBoxLayout()
         self.where = ElidedLabel('', 'hint')
         folder = button('Change folder…', 'ghost')
@@ -334,7 +340,7 @@ class SaveDialog(QDialog):
         name = self.name.text().strip()
         if not name or any(mark in name for mark in '/\\:*?"<>|'):
             return self.problem.setText('Give the copy a name without any of  / \\ : * ? " < > |')
-        if not name.lower().endswith(('.nii',) if self.extension == '.nii' else ('.tif', '.tiff')):
+        if not name.lower().endswith(self.allowed):
             name += self.extension
             self.name.setText(name)
         target = os.path.join(self.folder, name)

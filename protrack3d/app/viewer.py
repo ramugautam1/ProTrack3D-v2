@@ -454,7 +454,12 @@ class ViewerPage(Page):
         whole = self.stack.plane(0, 0).dtype
         top = float(np.iinfo(whole).max) if np.issubdtype(whole, np.integer) else 1.0
         ranges = [(lv.low, lv.high) for lv in levels]
-        dialog = SaveDialog(self, image, ranges, top)
+        problem = None
+        if image.lower().endswith('.czi'):
+            from ..rescale import czi_problem
+            problem = czi_problem(image)
+        # parented to the window, not this page: the page's scroll-area style would strip the dialog's borders
+        dialog = SaveDialog(self.window(), image, ranges, top, problem)
         if not dialog.exec():
             return
         args = ['rescale', image, '--out', dialog.target]
