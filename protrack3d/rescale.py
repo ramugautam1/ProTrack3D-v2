@@ -1,5 +1,8 @@
 """Saving an image with a brightness and contrast setting applied to its pixel values.
 
+A .tif or .nii is written anew. A .czi is copied and only the pixel values in the copy are changed, so all of its
+metadata stay; it can also be saved as a .tif.
+
 Every value is rescaled so that `low` becomes 0 and `high` becomes the largest value the image type holds (255 for
 8-bit, 65535 for 16-bit, 1.0 for floating point), which is what ImageJ's Apply does. Values outside the range are
 clipped, so this cannot be undone: the saved image no longer holds the measured intensities.
@@ -19,6 +22,59 @@ def _top(dtype):
 def _scale(values, low, high, dtype):
     scaled = np.clip((values.astype(np.float32) - low) / max(high - low, 1e-9), 0, 1) * _top(dtype)
     return np.rint(scaled).astype(dtype) if np.issubdtype(dtype, np.integer) else scaled.astype(dtype)
+
+
+CZI_PIXELS = {'Gray8': np.uint8, 'Gray16': np.dtype('<u2'), 'Gray32Float': np.dtype('<f4')}
+
+
+def czi_problem(path):
+    """Why this .czi cannot be saved as a .czi with new pixel values, or None when it can: every tile has to be stored
+    uncompressed with one grey value per pixel, so the new values can be written over the old ones in a copy."""
+    import czifile
+    with czifile.CziFile(path) as czi:
+        for entry in czi.subblock_directory:
+            if entry.compression != 0:
+                return 'its image data are compressed'
+            if entry.pixel_type not in CZI_PIXELS:
+                return f'its pixels are {entry.pixel_type}, not grey values'
+    return None
+
+
+def _rescale_czi(image, out, ranges, reporter):
+    """Copy the .czi and rescale the pixel values of every tile in the copy. Everything else in the file (all metadata,
+    every scene, the pyramid levels) is kept as it was."""
+    import shutil
+
+    import czifile
+    problem = czi_problem(image)
+    if problem:
+        raise ValueError(f'{os.path.basename(image)} cannot be saved as a .czi because {problem}. Save it as a .tif instead.')
+    with czifile.CziFile(image) as czi:
+        tiles = []
+        for entry in czi.subblock_directory:
+            channel = next((d.start for d in entry.dimension_entries if d.dimension == 'C'), 0)
+            segment = entry.data_segment()
+            tiles.append((channel, segment.data_offset, segment.data_size, CZI_PIXELS[entry.pixel_type]))
+    first = min(t[0] for t in tiles)
+    channels = max(t[0] for t in tiles) - first + 1
+    ranges = [tuple(r) for r in ranges] * (channels if len(ranges) == 1 else 1)
+    if len(ranges) != channels:
+        raise ValueError(f'the image has {channels} channels but {len(ranges)} ranges were given')
+    part = out + '.part'
+    shutil.copyfile(image, part)
+    try:
+        with open(part, 'r+b') as f:
+            for i, (channel, offset, size, dtype) in enumerate(tiles):
+                f.seek(offset)
+                values = np.frombuffer(f.read(size), dtype)
+                f.seek(offset)
+                f.write(_scale(values, *ranges[channel - first], dtype).astype(dtype).tobytes())
+                reporter.progress(i + 1, len(tiles), f'tile {i + 1} of {len(tiles)}')
+    except BaseException:
+        os.remove(part)
+        raise
+    os.replace(part, out)
+    return channels
 
 
 def _tif_details(path):
@@ -65,10 +121,15 @@ def rescale(image, out, ranges, reporter=None):
     reporter = reporter or Reporter()
     image, out = os.path.abspath(image), os.path.abspath(out)
     kind = image.lower()
-    wanted = '.nii' if kind.endswith('.nii') else ('.tif', '.tiff')
+    wanted = '.nii' if kind.endswith('.nii') else ('.tif', '.tiff', '.czi') if kind.endswith('.czi') else ('.tif', '.tiff')
     if not out.lower().endswith(wanted):
-        raise ValueError(f'the saved image has to be a {wanted if isinstance(wanted, str) else ".tif"} file')
+        raise ValueError(f'the saved image has to be a {wanted if isinstance(wanted, str) else " or ".join(wanted)} file')
     reporter.stage('saving image', message=os.path.basename(out))
+    if kind.endswith('.czi') and out.lower().endswith('.czi'):
+        channels = _rescale_czi(image, out, ranges, reporter)
+        result = {'image': out, 'replaced': out == image, 'channels': channels}
+        reporter.stage_done(**result)
+        return result
     if kind.endswith('.nii'):
         _rescale_nii(image, out, ranges, reporter)
         result = {'image': out, 'replaced': out == image}
