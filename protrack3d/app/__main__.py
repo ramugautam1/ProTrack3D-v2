@@ -23,6 +23,7 @@ def main():
     app = QApplication(sys.argv)
     app.setOrganizationName('ProTrack3D')
     app.setApplicationName('ProTrack3D')
+    app.setDesktopFileName('protrack3d')  # Linux: ties the window to the menu entry the launcher writes, and its icon
     if os.path.isfile(ICON):
         app.setWindowIcon(QIcon(ICON))  # the Dock icon on macOS, the window and taskbar icon elsewhere
     theme = Theme(app)

@@ -1,0 +1,3 @@
+# Windows batch files need CRLF line endings; they are stored that way and never converted, so a git clone,
+# the GitHub ZIP and the in-app updater all get the same bytes.
+*.bat -text

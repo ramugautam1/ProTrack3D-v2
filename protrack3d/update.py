@@ -194,7 +194,8 @@ def _install_packages(reporter):
         reporter.stream.flush()
     if process.wait():
         raise RuntimeError('the files were updated, but the new packages could not be installed (see the log). '
-                           'Check the internet connection and press Update again.')
+                           'Close ProTrack3D and start it again with its launcher, which finishes the job; on Windows '
+                           'that is the only way, because packages in use cannot be replaced.')
     os.remove(PENDING)
 
 

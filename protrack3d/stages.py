@@ -19,6 +19,29 @@ def tracking_folder(image, seg_folder):
     return os.path.join(os.path.dirname(os.path.dirname(os.path.normpath(seg_folder))), image_base(image) + '_TrackingOutput')
 
 
+# The longest name tracking and analysis write under the tracking folder, with room for timepoint numbers.
+LONGEST_RESULT = os.path.join('Analysis9999-9999', '(CARE WHERE OBJS END UP)BY_SIZE_CONTRIBUTION_TO_GROUP_INTENSITY_CHANGE.png')
+
+
+def check_path_length(track_folder):
+    """Windows cannot reach files with paths over 260 characters unless long paths are switched on. Tracking and
+    analysis make long names, so say so before a long run rather than fail in the middle of it."""
+    if os.name != 'nt':
+        return
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\FileSystem') as key:
+            if winreg.QueryValueEx(key, 'LongPathsEnabled')[0] == 1:
+                return
+    except OSError:
+        pass
+    longest = len(os.path.join(os.path.abspath(track_folder), LONGEST_RESULT))
+    if longest > 255:
+        raise ValueError(f'the results would have file paths of up to {longest} characters, more than Windows allows '
+                         f'(260). Move the image to a shorter folder (for example C:\\data) or give it a shorter name, '
+                         f'then run again.')
+
+
 class _Watch:
     """Stands in for sys.stdout: passes text through and calls `on_line` for every finished line."""
 
@@ -65,19 +88,28 @@ def remove_working_files(track_folder, seg_folder, start, end):
     """
     import shutil
     freed = 0
+    # Windows refuses to delete a file something still holds open; what cannot go now is left for the user, not an error
     for t in range(start, end + 1):
         folder = os.path.join(track_folder, str(t))
         if os.path.isfile(os.path.join(folder, f'Weights_{t}.nii')) or os.path.isfile(os.path.join(folder, f'Fullsize_{t}.nii')):
-            freed += sum(os.path.getsize(os.path.join(folder, f)) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)))
-            shutil.rmtree(folder)
+            size = sum(os.path.getsize(os.path.join(folder, f)) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)))
+            shutil.rmtree(folder, ignore_errors=True)
+            freed += size if not os.path.isdir(folder) else 0
     features = os.path.join(seg_folder, 'Features')
     if os.path.isdir(features):
         for name in os.listdir(features):
             if name.startswith('features_') and name.endswith('.npy'):
-                freed += os.path.getsize(os.path.join(features, name))
-                os.remove(os.path.join(features, name))
-        if not os.listdir(features):
+                path = os.path.join(features, name)
+                size = os.path.getsize(path)
+                try:
+                    os.remove(path)
+                    freed += size
+                except OSError:
+                    pass
+        try:
             os.rmdir(features)
+        except OSError:
+            pass
     return freed
 
 
@@ -98,6 +130,7 @@ def track(image, seg_folder=None, start=1, frames=None, trackback=2, reporter=No
 
     reporter = reporter or Reporter()
     seg_folder = os.path.normpath(seg_folder or segmentation_folder(image))
+    check_path_length(tracking_folder(image, seg_folder))
     if frames is None:
         params = pd.read_csv(os.path.join(seg_folder, 'segmentation_parameters.csv'))
         frames = int(params['endTime'][0]) - int(params['startTime'][0]) + 1
@@ -238,6 +271,8 @@ def pipeline(image, model_path, out_dir=None, start=1, end=None, trackback=2, st
     reporter = reporter or Reporter()
     results = {}
     seg_folder = segmentation_folder(image, out_dir)
+    if 'track' in steps or 'analysis' in steps:
+        check_path_length(tracking_folder(image, seg_folder))  # before segmentation, not after it
     if 'seg' in steps:
         results['seg'] = segment_image(image, model_path, out_dir, start, end, device=device, reporter=reporter)
     frames = (end or read_image_info(image)['t']) - start + 1
