@@ -129,10 +129,10 @@ Tick "one overview of every object" to get a single picture of the whole movie. 
 
 ## Armadillo / Dia (fixed embryos)
 
-This one is for a specific job: fixed embryos, imaged once, several channels in one `.czi` file.
+This one is for a specific job: fixed embryos, imaged once, several channels in one file. The file can be a `.czi`, or a TIFF with the channels in it: a Fiji hyperstack, an OME-TIFF (`.ome.tif`), a Zeiss `.lsm`, or an RGB stack.
 
 1. Go to **Armadillo / Dia**.
-2. Drop the folder. Subfolders are fine. `.czi` files are read directly, you do not need to convert them.
+2. Drop the folder. Subfolders are fine. `.czi` and TIFF files are read directly, you do not need to convert them. ProTrack3D reads the channel order the file says it has. A TIFF saved without saying which axis is the channels is refused with a message; open it in Fiji, use Image > Hyperstacks > Stack to Hyperstack, and save it again.
 3. Check the channel numbers. By default Armadillo is channel 2 and Dia is channel 3.
 4. Press **Run**.
 

@@ -25,13 +25,16 @@ def rename_active(widget, active):
     widget.style().polish(widget)
 
 
-VIEWER_FILTERS = 'Images (*.tif *.tiff *.nii *.czi);;All files (*)'
+VIEWER_FILTERS = 'Images (*.tif *.tiff *.lsm *.nii *.czi);;All files (*)'
 
 
-def _tif_axes(path):
-    import tifffile
-    with tifffile.TiffFile(path) as tif:
-        return tif.series[0].axes
+def _tif_channels(path):
+    """How many channels a TIFF holds, from its axes (a channel axis, or the colours of an RGB stack)."""
+    from ..czi import tif_layout
+    try:
+        return tif_layout(path)[0][1]
+    except ValueError:
+        return 1
 
 
 class Stack:
@@ -46,7 +49,7 @@ class Stack:
         self.path, self.channel, self.channel_names, self.notes = path, 0, [''], []
         self._nii = self._tif = self._multi = None
         low = path.lower()
-        if low.endswith('.czi') or (low.endswith(('.tif', '.tiff')) and 'C' in _tif_axes(path)):
+        if low.endswith('.czi') or (low.endswith(('.tif', '.tiff', '.lsm')) and _tif_channels(path) > 1):
             from ..czi import read_czi, read_multichannel_tif
             self._multi, self.channel_names, self.notes = (read_czi if low.endswith('.czi') else read_multichannel_tif)(path)
             t, c, z, y, x = self._multi.shape
@@ -76,7 +79,8 @@ class Stack:
             self.mask = nib.load(mask).dataobj
         else:  # a mask saved as a .tif next to the image: <name>_SEG.tif, or <name>_ARM_SEG.tif from the Armadillo workflow
             import tifffile
-            stem = os.path.splitext(path)[0]
+            from ..czi import stem as file_stem
+            stem = file_stem(path)
             for candidate in (stem + '_SEG.tif', stem + '_ARM_SEG.tif'):
                 if os.path.isfile(candidate):
                     data = tifffile.imread(candidate)
