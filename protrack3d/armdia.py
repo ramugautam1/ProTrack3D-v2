@@ -2,7 +2,8 @@
 
 It replaces the batch scripts the workflow used to be run with (conversion from .czi, segmentation, quantification):
 
-  1. prepare   every .czi (or ZCYX .tif) under a folder: the first `z_layers` slices of the Armadillo channel are
+  1. prepare   every .czi or multi-channel TIFF (.tif, .ome.tif, .lsm, in any axis order the file records) under a
+               folder: the first `z_layers` slices of the Armadillo channel are
                saved as <name>_ARM.tif and of the Dia channel as <name>_DIA.tif, next to the source file.
   2. segment   <name>_ARM.tif with the chosen model, tiles scaled by the darkest and brightest voxel of the whole
                stack, objects of `size_filter` voxels or fewer removed -> <name>_ARM_SEG.tif.
@@ -13,6 +14,7 @@ import os
 
 import numpy as np
 
+from .czi import TIFF_EXTENSIONS, read_multichannel_tif, stem, tif_layout
 from .events import Reporter
 from .models import load_model, pick_device
 from .paths import add_repo_to_path
@@ -31,7 +33,7 @@ def find_sources(root):
         czi = {os.path.splitext(f)[0] for f in files if f.lower().endswith('.czi')}
         for f in sorted(files):
             stem, ext = os.path.splitext(f)
-            if f.startswith('.') or ext.lower() not in ('.czi', '.tif', '.tiff'):
+            if f.startswith('.') or ext.lower() not in ('.czi',) + TIFF_EXTENSIONS:
                 continue
             derived = f.lower().endswith(tuple(d.lower() for d in DERIVED) + tuple(d.lower() + 'f' for d in DERIVED)) or '_boundary_' in f.lower()
             if ext.lower() == '.czi' or (not derived and stem not in czi):
@@ -42,7 +44,7 @@ def find_sources(root):
 def describe_folder(root):
     """How many source images a folder holds and what the first one looks like, without reading pixel data."""
     sources = find_sources(root)
-    info = {'images': len(sources), 'folders': len({os.path.dirname(s) for s in sources}), 'first': None}
+    info = {'images': len(sources), 'folders': len({os.path.dirname(s) for s in sources}), 'first': None, 'problem': None, 'note': None}
     if sources:
         first = sources[0]
         if first.lower().endswith('.czi'):
@@ -50,17 +52,21 @@ def describe_folder(root):
             with czifile.CziFile(first) as czi:
                 size = dict(zip(czi.axes, czi.shape))
         else:
-            import tifffile
-            with tifffile.TiffFile(first) as tif:
-                series = tif.series[0]
-                size = dict(zip(series.axes if len(series.axes) == len(series.shape) else 'ZCYX'[-len(series.shape):], series.shape))
+            try:
+                (t, c, z, y, x), note = tif_layout(first)
+            except ValueError as e:
+                info['problem'] = str(e)
+                return info
+            size = {'T': t, 'C': c, 'Z': z, 'Y': y, 'X': x}
+            info['note'] = note
         info['first'] = {'name': os.path.basename(first), 'channels': int(size.get('C', 1)), 'z': int(size.get('Z', 1)),
                          'y': int(size.get('Y', 0)), 'x': int(size.get('X', 0))}
     return info
 
 
 def read_stack(path):
-    """A source image as (z, channel, y, x). CZI: first scene, one timepoint. TIF: ZCYX, or ZYX with one channel."""
+    """A source image as (z, channel, y, x). CZI: first scene, one timepoint. TIFF: any axis order the file records
+    (ImageJ hyperstack, OME-TIFF, .lsm, RGB), one timepoint."""
     if path.lower().endswith('.czi'):
         import czifile
         with czifile.CziFile(path) as czi:
@@ -75,13 +81,10 @@ def read_stack(path):
             if axis not in axes:
                 data, axes = data[None], axis + axes
         return np.ascontiguousarray(data.transpose([axes.index(a) for a in 'ZCYX']))
-    import tifffile
-    data = tifffile.imread(path)
-    if data.ndim == 3:
-        return data[:, None]
-    if data.ndim != 4:
-        raise ValueError(f'{os.path.basename(path)} has shape {data.shape}; expected ZCYX or ZYX.')
-    return data
+    data = read_multichannel_tif(path)[0]  # (t, c, z, y, x)
+    if data.shape[0] > 1:
+        raise ValueError(f'{os.path.basename(path)} has {data.shape[0]} timepoints; this workflow takes single stacks.')
+    return np.ascontiguousarray(data[0].transpose(1, 0, 2, 3))
 
 
 def remove_small_objects(mask, size_filter):
@@ -118,9 +121,9 @@ def run(root, model_path, z_layers=20, size_filter=160, arm_channel=2, dia_chann
     reporter = reporter or Reporter()
     root = os.path.abspath(root)
     sources = find_sources(root)
-    names = [os.path.splitext(s)[0] for s in sources]
+    names = [stem(s) for s in sources]
     if not sources:
-        raise ValueError(f'No .czi or .tif images were found under {root}.')
+        raise ValueError(f'No .czi or TIFF (.tif, .tiff, .lsm) images were found under {root}.')
     result = {'folder': root, 'images': len(sources)}
 
     if 'prepare' in steps:

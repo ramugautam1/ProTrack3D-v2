@@ -16,7 +16,7 @@ class ArmDiaPage(Page):
                                                  'are found, and Dia is measured inside and outside them.')
         self.info = None
         card = Card('Measure')
-        self.folder = card.row('Folder of images', PathField(ctx.theme, 'folder', 'Drop the folder here (.czi or .tif, subfolders included), or browse'),
+        self.folder = card.row('Folder of images', PathField(ctx.theme, 'folder', 'Drop the folder here (.czi, .tif, .ome.tif or .lsm, subfolders included), or browse'),
                                'Results are written next to each image, and one summary table into this folder.')
         self.folder.changed.connect(self.folder_changed)
         self.model = card.row('Model', ModelBox())
@@ -66,18 +66,23 @@ class ArmDiaPage(Page):
                 self.folder.set_detail(str(e))
                 return
             first = self.info['first']
-            if first:
+            if self.info.get('problem'):
+                self.folder.set_detail(self.info['problem'])
+            elif first:
                 self.folder.set_detail(f"{self.info['images']} images in {self.info['folders']} folders  ·  the first has {first['channels']} "
-                                       f"channel{'s' if first['channels'] != 1 else ''}, {first['z']} slices, {first['x']} × {first['y']}")
+                                       f"channel{'s' if first['channels'] != 1 else ''}, {first['z']} slices, {first['x']} × {first['y']}"
+                                       + (f"  ·  {self.info['note']}" if self.info.get('note') else ''))
                 if first['channels'] == 1:
                     self.arm_only.setChecked(True)
                     self.arm_channel.setValue(1)
             else:
-                self.folder.set_detail('No .czi or .tif images in this folder.')
+                self.folder.set_detail('No .czi or TIFF images in this folder.')
 
     def submit(self):
         if not self.info or not self.info['images']:
-            return 'Choose a folder that holds .czi or .tif images.'
+            return 'Choose a folder that holds .czi or TIFF images.'
+        if self.info.get('problem'):
+            return self.info['problem']
         if not self.model.currentData():
             return 'No model is installed.'
         channels = self.info['first']['channels']
