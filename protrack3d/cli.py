@@ -120,7 +120,9 @@ def main(argv=None):
     p = sub.add_parser('armdia', help='Armadillo/Dia workflow on a folder of .czi or .tif stacks (one timepoint each)')
     p.add_argument('folder')
     p.add_argument('--model', required=True)
-    p.add_argument('--z-layers', type=int, default=20, help='use the first this-many z slices')
+    p.add_argument('--z-start', type=int, default=1, help='first z slice to use, counted from 1')
+    p.add_argument('--z-end', type=int, default=20, help='last z slice to use (default 20; images with fewer slices use all of theirs)')
+    p.add_argument('--z-layers', type=int, help='the older way to say it: use slices 1 to this')
     p.add_argument('--size-filter', type=int, default=160, help='remove objects of this many voxels or fewer')
     p.add_argument('--arm-channel', type=int, default=2, help='channel holding Armadillo, counted from 1')
     p.add_argument('--dia-channel', type=int, default=3, help='channel holding Dia, counted from 1')
@@ -217,7 +219,8 @@ def run(args, reporter):
                         tuple(args.steps.split(',')), args.device, reporter, args.seed, args.keep_working_folders)
     elif args.command == 'armdia':
         from .armdia import run as run_armdia
-        run_armdia(args.folder, _model_path(args.model), args.z_layers, args.size_filter, args.arm_channel, args.dia_channel,
+        z_start, z_end = (1, args.z_layers) if args.z_layers else (args.z_start, args.z_end)
+        run_armdia(args.folder, _model_path(args.model), z_start, z_end, args.size_filter, args.arm_channel, args.dia_channel,
                    args.arm_only, not args.no_threshold, args.csv, tuple(args.steps.split(',')), args.device, reporter)
     elif args.command == 'armdia-boundary':
         from .armdia_boundary import run as run_boundary

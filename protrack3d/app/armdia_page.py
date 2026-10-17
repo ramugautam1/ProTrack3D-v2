@@ -27,8 +27,9 @@ class ArmDiaPage(Page):
         self.arm_only = QCheckBox('The images hold Armadillo only')
         self.arm_only.toggled.connect(lambda on: self.dia_channel.setEnabled(not on))
         card.row('Channels', inline(text('Armadillo is channel', 'sub'), self.arm_channel, text('Dia is channel', 'sub'), self.dia_channel, self.arm_only))
-        self.z_layers, self.size_filter = spin(1, 9999, 20, 56), spin(0, 999999, 160, 70)
-        card.row('Slices', inline(text('Use the first', 'sub'), self.z_layers, text('z slices', 'sub')))
+        self.z_start, self.z_end, self.size_filter = spin(1, 9999, 1, 56), spin(1, 9999, 20, 56), spin(0, 999999, 160, 70)
+        card.row('Slices', inline(text('Use z slices', 'sub'), self.z_start, text('to', 'sub'), self.z_end),
+                 'Counted from 1, both included. An image with fewer slices uses up to its last one.')
         card.row('Smallest object', inline(text('Remove puncta of', 'sub'), self.size_filter, text('voxels or fewer', 'sub')))
         self.threshold = QCheckBox('Before measuring, set everything at or below background (mean + 3 standard deviations) to zero')
         self.threshold.setChecked(True)
@@ -91,7 +92,12 @@ class ArmDiaPage(Page):
             return f'The images have {channels} channel{"s" if channels != 1 else ""}; channel {max(wanted)} does not exist.'
         if not self.arm_only.isChecked() and self.arm_channel.value() == self.dia_channel.value():
             return 'Armadillo and Dia cannot be the same channel.'
-        args = ['armdia', self.folder.path, '--model', self.model.currentData(), '--z-layers', str(self.z_layers.value()),
+        if self.z_start.value() > self.z_end.value():
+            return 'The first slice comes after the last one.'
+        if self.info['first'] and self.z_start.value() > self.info['first']['z']:
+            return f"The images have {self.info['first']['z']} slices; the range starts at slice {self.z_start.value()}."
+        args = ['armdia', self.folder.path, '--model', self.model.currentData(),
+                '--z-start', str(self.z_start.value()), '--z-end', str(self.z_end.value()),
                 '--size-filter', str(self.size_filter.value()), '--arm-channel', str(self.arm_channel.value()),
                 '--dia-channel', str(self.dia_channel.value())]
         if self.arm_only.isChecked():
