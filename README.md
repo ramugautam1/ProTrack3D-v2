@@ -136,7 +136,7 @@ This one is for a specific job: fixed embryos, imaged once, several channels in 
 3. Check the channel numbers. By default Armadillo is channel 2 and Dia is channel 3.
 4. Press **Run**.
 
-For each image you get, next to it: `_ARM.tif` and `_DIA.tif` (the two channels, first 20 slices), `_ARM_SEG.tif` (the Armadillo puncta), and the masked images. In the folder you dropped you get one table, `ARM_DIA_Summary.csv`, one row per image.
+For each image you get, next to it: `_ARM.tif` and `_DIA.tif` (the two channels, slices 1 to 20 unless you set another range under **Slices**), `_ARM_SEG.tif` (the Armadillo puncta), and the masked images. In the folder you dropped you get one table, `ARM_DIA_Summary.csv`, one row per image.
 
 If you also have cell outlines: put them in a folder called `Cell Outlines` next to the embryo folders, one subfolder per embryo, and press **Run boundary analysis**. It tells you which puncta sit on a cell boundary and which do not.
 

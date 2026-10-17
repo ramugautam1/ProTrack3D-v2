@@ -3,7 +3,7 @@
 It replaces the batch scripts the workflow used to be run with (conversion from .czi, segmentation, quantification):
 
   1. prepare   every .czi or multi-channel TIFF (.tif, .ome.tif, .lsm, in any axis order the file records) under a
-               folder: the first `z_layers` slices of the Armadillo channel are
+               folder: the z slices `z_start` to `z_end` (counted from 1) of the Armadillo channel are
                saved as <name>_ARM.tif and of the Dia channel as <name>_DIA.tif, next to the source file.
   2. segment   <name>_ARM.tif with the chosen model, tiles scaled by the darkest and brightest voxel of the whole
                stack, objects of `size_filter` voxels or fewer removed -> <name>_ARM_SEG.tif.
@@ -109,9 +109,10 @@ def segment_arm(arm_path, model, device, size_filter=160):
     return out, int(ndi.label(mask, structure=ndi.generate_binary_structure(3, 1))[1])
 
 
-def run(root, model_path, z_layers=20, size_filter=160, arm_channel=2, dia_channel=3, arm_only=False, threshold=True,
+def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, dia_channel=3, arm_only=False, threshold=True,
         csv_name=None, steps=('prepare', 'segment', 'quantify'), device=None, reporter=None):
-    """Run the workflow on every source image under `root`. Channels are counted from 1.
+    """Run the workflow on every source image under `root`. Channels and z slices are counted from 1; slices z_start to
+    z_end (both included) are used, or up to the last slice when an image has fewer.
 
     arm_only: the images hold only Armadillo (its channel is still `arm_channel`); nothing is done for Dia.
     threshold: before measuring, set voxels at or below (background mean + 3 standard deviations) to zero, the
@@ -127,15 +128,20 @@ def run(root, model_path, z_layers=20, size_filter=160, arm_channel=2, dia_chann
     result = {'folder': root, 'images': len(sources)}
 
     if 'prepare' in steps:
-        reporter.stage('preparation', total=len(sources), message=f'{len(sources)} images: first {z_layers} slices of the Armadillo'
+        z_start, z_end = int(z_start), int(z_end)
+        if not 1 <= z_start <= z_end:
+            raise ValueError(f'the slice range {z_start} to {z_end} is not valid: slices are counted from 1, and the first cannot come after the last.')
+        reporter.stage('preparation', total=len(sources), message=f'{len(sources)} images: slices {z_start} to {z_end} of the Armadillo'
                        + ('' if arm_only else ' and Dia') + ' channels')
         for i, (source, name) in enumerate(zip(sources, names)):
             stack = read_stack(source)
-            channels = stack.shape[1]
+            channels, depth = stack.shape[1], stack.shape[0]
+            if z_start > depth:
+                raise ValueError(f'{os.path.basename(source)} has {depth} z slices; the range starts at slice {z_start}.')
             for channel, suffix in ((arm_channel, '_ARM.tif'),) + (() if arm_only else ((dia_channel, '_DIA.tif'),)):
                 if not 1 <= channel <= channels:
                     raise ValueError(f'{os.path.basename(source)} has {channels} channel(s); channel {channel} was asked for.')
-                tifffile.imwrite(name + suffix, stack[:min(int(z_layers), stack.shape[0]), channel - 1], imagej=True, metadata={'axes': 'ZYX'})
+                tifffile.imwrite(name + suffix, stack[z_start - 1:min(z_end, depth), channel - 1], imagej=True, metadata={'axes': 'ZYX'})
             reporter.progress(i + 1, len(sources), os.path.basename(source))
         reporter.stage_done(images=len(sources))
 
