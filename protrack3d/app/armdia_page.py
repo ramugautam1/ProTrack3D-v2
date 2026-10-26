@@ -44,7 +44,7 @@ class ArmDiaPage(Page):
         second = Card('Puncta on the cell boundary')
         second.add(text('Needs a "Cell Outlines" folder next to the embryo folders, with one outline image per stack. Each outline is '
                         'thickened, and a punctum counts as a boundary punctum when enough of it lies on the outline. Run "Measure" first.', 'sub', wrap=True))
-        self.outlines = second.row('Outlines folder', PathField(ctx.theme, 'folder', '"Cell Outlines" inside the folder above'))
+        self.outlines = second.row('Outlines folder', PathField(ctx.theme, 'folder', '"Cell Outlines" inside or next to the folder above'))
         self.current, self.target, self.overlap = spin(1, 999, 6, 56), spin(1, 999, 30, 56), spin(1, 100, 30, 56)
         second.row('Outline width', inline(text('Drawn at', 'sub'), self.current, text('pixels, thicken to', 'sub'), self.target, text('pixels', 'sub')))
         second.row('On the boundary when', inline(self.overlap, text('% or more of the punctum overlaps', 'sub')))

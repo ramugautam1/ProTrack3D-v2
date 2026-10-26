@@ -10,8 +10,11 @@ A port of the notebook "Boundary Dialate and ARM quantify.ipynb", with its two s
 The notebook measures Armadillo only. When <image>_DIA.tif is there too, Dia is measured in the same puncta and its
 columns (ending in _dia) are added after the Armadillo ones; the Armadillo columns are unchanged.
 
-Folders are matched by embryo number ("embryo 3", "Embryo 03") and files by name: an outline file is the image name
-with an optional "C1-MAX_" in front and "outline only" or "cell outline" at the end.
+Folders are matched by embryo number ("embryo 3", "Embryo 03") and files by name. An outline file is the image name
+with, optionally, a channel or projection prefix in front (C2-, C1-MAX_, MAX_C2-, MAX_) and an outline word at the end
+(outline only, outlineonly, outline_only, cell outline, outline). Names are compared ignoring case and treating spaces,
+underscores and hyphens alike. Outlines may be .tif or .tiff, or an ImageJ TIFF saved under a .czi name. Files with the
+outline drawn into the picture ("with outline", "withoutline", even misspelt "withoutilne") are not outlines and are skipped.
 """
 import os
 import re
@@ -30,11 +33,39 @@ def extract_embryo_key(name):
     return int(m.group(1)) if m else None
 
 
+PREFIX = re.compile(r'^(?:MAX_?)?(?:C\d+-)?(?:MAX_?)?', re.IGNORECASE)  # C2-, C1-MAX_, MAX_C2-, MAX_
+OUTLINE_WORD = re.compile(r'[-_ ]*(?:cell[-_ ]*)?outl\w*?(?:[-_ ]*only)?\s*$', re.IGNORECASE)  # outline only, outlineonly, _outline, cell outline
+WITH_OUTLINE = re.compile(r'with[-_ ]*out', re.IGNORECASE)  # with outline, withoutline, withoutilne: the picture with lines drawn in
+OUTLINE_EXTENSIONS = ('.tif', '.tiff', '.czi')
+
+
+def match_key(name):
+    """What two names are compared by: lower case, with every run of spaces, underscores and hyphens made one space."""
+    return re.sub(r'[-_\s]+', ' ', name).strip().lower()
+
+
 def strip_boundary_filename(fn):
     stem = Path(fn).stem
-    stem = re.sub(r'^[Cc]\d+-?MAX_?', '', stem, flags=re.IGNORECASE)
-    stem = re.sub(r'[-_ ]*(outline\s*only|cell\s*outline)\s*$', '', stem, flags=re.IGNORECASE)
+    stem = PREFIX.sub('', stem)
+    stem = OUTLINE_WORD.sub('', stem)
     return stem.strip('-_ ')
+
+
+def read_outline(path):
+    """A 2-D outline image. ImageJ sometimes saves a TIFF under a .czi name, so the file's content decides, not its name."""
+    import tifffile
+    try:
+        data = tifffile.imread(path)
+    except Exception:
+        if str(path).lower().endswith('.czi'):
+            from .czi import read_czi
+            data = read_czi(str(path))[0]
+        else:
+            raise
+    data = np.squeeze(np.asarray(data))
+    if data.ndim != 2:
+        raise ValueError(f'{Path(path).name} is not a single 2-D outline (its shape is {data.shape})')
+    return data
 
 
 def embryo_folders(root, skip=()):
@@ -53,16 +84,20 @@ def arm_images(folder, z_suffix):
     for p in folder.glob('*_ARM.tif'):
         full = p.stem[:-len('_ARM')]
         key = full[:-len(z_suffix)] if z_suffix and full.endswith(z_suffix) else full
-        out[key] = (full, p)
+        out[match_key(key)] = (full, p)
     return out
 
 
 def outline_files(folder):
+    """{match key: outline path}. A .tif wins over a .czi-named copy of the same outline."""
     out = {}
-    for fn in os.listdir(folder):
-        low = fn.lower()
-        if low.endswith(('.tif', '.tiff')) and 'with outline' not in low and 'with_outline' not in low and not fn.startswith('.'):
-            out[strip_boundary_filename(fn)] = folder / fn
+    for fn in sorted(os.listdir(folder), key=lambda f: f.lower().endswith('.czi')):
+        if fn.startswith('.') or not fn.lower().endswith(OUTLINE_EXTENSIONS) or WITH_OUTLINE.search(fn):
+            continue
+        stem = Path(fn).stem
+        if not OUTLINE_WORD.search(stem) and not PREFIX.match(stem).group(0):
+            continue  # a .czi or .tif with no outline word and no channel prefix is an image, not an outline
+        out.setdefault(match_key(strip_boundary_filename(fn)), folder / fn)
     return out
 
 
@@ -148,13 +183,16 @@ def analyze_image(name, image_folder, boundary_path, embryo, root, overlap):
 
 
 def run(root, embryos=None, outlines=None, current_width=6, target_width=30, overlap=0.30, z_suffix='-20z', reporter=None):
-    """Run both steps. `root` holds the embryo folders (directly, or in "Embryos") and a "Cell Outlines" folder."""
+    """Run both steps. `root` holds the embryo folders (directly, or in "Embryos"); the "Cell Outlines" folder is
+    inside it or next to it, unless `outlines` names another."""
     import pandas as pd
     import tifffile
     reporter = reporter or Reporter()
     root = Path(root)
     embryos_root = Path(embryos) if embryos else (root / 'Embryos' if (root / 'Embryos').is_dir() else root)
     outlines_root = Path(outlines) if outlines else root / 'Cell Outlines'
+    if not outlines and not outlines_root.is_dir() and (root.parent / 'Cell Outlines').is_dir():
+        outlines_root = root.parent / 'Cell Outlines'  # kept next to the folder of embryos rather than inside it
     if not outlines_root.is_dir():
         raise ValueError(f'There is no outlines folder at {outlines_root}.')
     image_folders = embryo_folders(embryos_root, skip=('cell outlines', 'dilated'))
@@ -183,7 +221,7 @@ def run(root, embryos=None, outlines=None, current_width=6, target_width=30, ove
     for n, (key, folder, name, arm_path, outline_path) in enumerate(pairs):
         try:
             z, y, x = tifffile.imread(arm_path).shape
-            outline = np.asarray(tifffile.imread(outline_path))
+            outline = read_outline(outline_path)
             if outline.shape != (y, x):
                 raise ValueError(f'outline is {outline.shape}, image is {(y, x)}')
             dilated, _ = dilate_outline(outline, current_width, target_width)

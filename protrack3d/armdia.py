@@ -133,9 +133,14 @@ def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, d
             raise ValueError(f'the slice range {z_start} to {z_end} is not valid: slices are counted from 1, and the first cannot come after the last.')
         reporter.stage('preparation', total=len(sources), message=f'{len(sources)} images: slices {z_start} to {z_end} of the Armadillo'
                        + ('' if arm_only else ' and Dia') + ' channels')
+        skipped = []
         for i, (source, name) in enumerate(zip(sources, names)):
             stack = read_stack(source)
             channels, depth = stack.shape[1], stack.shape[0]
+            if depth == 1:  # a 2-D picture kept with the stacks (a projection, a composite): not an image to measure
+                skipped.append(source)
+                reporter.progress(i + 1, len(sources), f'{os.path.basename(source)}: skipped, it has a single z slice')
+                continue
             if z_start > depth:
                 raise ValueError(f'{os.path.basename(source)} has {depth} z slices; the range starts at slice {z_start}.')
             for channel, suffix in ((arm_channel, '_ARM.tif'),) + (() if arm_only else ((dia_channel, '_DIA.tif'),)):
@@ -143,17 +148,22 @@ def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, d
                     raise ValueError(f'{os.path.basename(source)} has {channels} channel(s); channel {channel} was asked for.')
                 tifffile.imwrite(name + suffix, stack[z_start - 1:min(z_end, depth), channel - 1], imagej=True, metadata={'axes': 'ZYX'})
             reporter.progress(i + 1, len(sources), os.path.basename(source))
-        reporter.stage_done(images=len(sources))
+        if skipped:  # the later steps work on what was prepared
+            sources = [s for s in sources if s not in skipped]
+            names = [stem(s) for s in sources]
+            result.update(images=len(sources), skipped=[os.path.basename(s) for s in skipped])
+        reporter.stage_done(images=len(sources), skipped=[os.path.basename(s) for s in skipped])
 
     if 'segment' in steps:
+        names = [n for n in names if os.path.isfile(n + '_ARM.tif')]  # a skipped picture has none
         device = pick_device(device)
-        reporter.stage('segmentation', total=len(sources), message=f'{len(sources)} Armadillo stacks on {device.type}, objects of {size_filter} voxels or fewer removed')
+        reporter.stage('segmentation', total=len(names), message=f'{len(names)} Armadillo stacks on {device.type}, objects of {size_filter} voxels or fewer removed')
         model, meta = load_model(model_path, device)
         objects = []
         for i, name in enumerate(names):
             _, n = segment_arm(name + '_ARM.tif', model, device, size_filter)
             objects.append(n)
-            reporter.progress(i + 1, len(sources), f'{os.path.basename(name)}: {n} objects')
+            reporter.progress(i + 1, len(names), f'{os.path.basename(name)}: {n} objects')
         result.update(model=meta.get('name'), device=device.type, objects=objects)
         reporter.stage_done(objects=objects)
 

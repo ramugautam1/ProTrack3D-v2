@@ -138,7 +138,11 @@ This one is for a specific job: fixed embryos, imaged once, several channels in 
 
 For each image you get, next to it: `_ARM.tif` and `_DIA.tif` (the two channels, slices 1 to 20 unless you set another range under **Slices**), `_ARM_SEG.tif` (the Armadillo puncta), and the masked images. In the folder you dropped you get one table, `ARM_DIA_Summary.csv`, one row per image.
 
-If you also have cell outlines: put them in a folder called `Cell Outlines` next to the embryo folders, one subfolder per embryo, and press **Run boundary analysis**. It tells you which puncta sit on a cell boundary and which do not.
+If you also have cell outlines: put them in a folder called `Cell Outlines`, inside the folder you dropped or next to it, with one subfolder per embryo (`embryo 3` and `Embryo 03` both count as embryo 3). Then press **Run boundary analysis**. It tells you which puncta sit on a cell boundary and which do not.
+
+An outline is found by its name: the image's name, with a channel or projection prefix if Fiji added one (`C2-`, `C3-`, `C1-MAX_`, `MAX_`) and an outline word at the end (`outline only`, `outlineonly`, `_outline`, `cell outline`). Spaces, underscores and hyphens count as the same, and so do capitals. So `C2-movie_pt2_outlineonly.tif` belongs to `movie_pt2.czi`. Files with the outline drawn on the picture (`withoutline`, `with outline`) are skipped. If Fiji saved an outline with a `.czi` ending, that is fine too.
+
+Measure skips pictures with a single z slice that sit among the stacks (a max projection, a composite), and says so.
 
 ## Disk space
 
