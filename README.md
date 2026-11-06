@@ -16,6 +16,17 @@ It runs on Windows, Mac and Linux. It uses your GPU if you have one (NVIDIA, or 
 ## Install
 
 1. Install Miniforge. On Windows and Mac, click through the installer and keep the defaults. On Linux, run the file you downloaded in a terminal (`bash Miniforge3-Linux-x86_64.sh`) and answer yes.
+
+   **On Linux, also install the system libraries the window needs.** Most Linux installs do not have them, and without them the app stops at the start with "Qt is missing some system libraries". It needs your password once.
+
+   Ubuntu, Debian, Mint, Pop!_OS:
+   ```bash
+   sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libegl1
+   ```
+   Fedora:
+   ```bash
+   sudo dnf install xcb-util-cursor libxkbcommon-x11
+   ```
 2. Get ProTrack3D. On this page click **Code**, then **Download ZIP**, and unzip it somewhere you will find it again. If you use git:
 
 ```bash
@@ -33,7 +44,7 @@ On a Mac, the first time, macOS may refuse to open the file because it came from
 
 On Windows, the first time, Windows may say it protected your PC. Press **More info**, then **Run anyway**. The first start puts ProTrack3D in the Start menu, so after that you can start it from there. If the computer has an NVIDIA card, the setup takes the GPU version of PyTorch by itself (a bigger download).
 
-On Linux, the first start puts ProTrack3D in your applications menu. If it stops and says Qt is missing libraries, it prints the command that installs them. Run that and start again. NVIDIA cards work with the normal NVIDIA driver.
+On Linux, the first start puts ProTrack3D in your applications menu. If it stops and says Qt is missing libraries, you skipped the libraries in step 1: run the command for your system from there (the app prints it too) and start again. NVIDIA cards work with the normal NVIDIA driver.
 
 4. Get the models. In the app go to **Models** and press **Download published models**. That is about 500 MB.
 
@@ -229,6 +240,7 @@ python -m protrack3d import-model old.npz
 
 ## When it breaks
 
+- **Linux: "Qt is missing some system libraries", or "could not load the Qt platform plugin xcb".** Install the libraries in Install, step 1, and start again.
 - **"conda was not found."** Miniforge is not installed, or you installed it somewhere unusual. Install it with the defaults.
 - **The first start fails halfway.** Usually the internet dropped. Start it again. It cleans up and retries.
 - **No models in the list.** Go to Models and press Download. If the download fails, check your internet and try again.
