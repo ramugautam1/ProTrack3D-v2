@@ -30,6 +30,14 @@ def main(argv=None):
         except (AttributeError, ValueError):
             pass
     os.environ.setdefault('MPLBACKEND', 'Agg')  # plots are only saved, never shown; no window system is needed
+    # Windows: PyTorch's core library (c10.dll) can fail to start, "WinError 1114", when other packages (SciPy, pandas,
+    # nibabel, ...) have loaded their own copies of the C++ runtime first. Segmentation imported those before PyTorch;
+    # loading PyTorch before anything else avoids it. Commands that never use PyTorch skip this.
+    if sys.platform == 'win32' and not {'update', 'info', '-h', '--help'} & set(sys.argv[1:] if argv is None else argv):
+        try:
+            import torch  # noqa: F401
+        except Exception:
+            pass  # a command that needs PyTorch will report the problem itself
     parser = argparse.ArgumentParser(prog='protrack3d', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--json', action='store_true', help='print progress as JSON lines')
     sub = parser.add_subparsers(dest='command', required=True)

@@ -247,6 +247,7 @@ python -m protrack3d import-model old.npz
 - **A job says Failed.** Press **Log** on that job, or open the console. The last lines say why. Most often: the disk is full, or the image has more than one channel.
 - **Segmentation finds nothing, or finds everything.** Wrong model for this protein. Try another one, or train your own.
 - **It is very slow.** Look at the bottom left of the window. If it says CPU, it is not using a GPU. On Windows with an NVIDIA card, update the NVIDIA driver and set it up again: delete the `protrack3d-torch` environment (`conda env remove -n protrack3d-torch`) and start the app.
+- **Windows: a job fails with `WinError 1114` and `c10.dll`.** Update ProTrack3D (Home, Update now); this is fixed. If it still happens, install the latest Microsoft Visual C++ Redistributable (x64) from Microsoft's website, restart the computer, and try again.
 - **Windows: a job fails saying a file or folder was not found.** Windows limits how long a file path can be, and tracking makes long folder names out of the image name. Put your images in a short folder, like `C:\data`, and give them short names.
 - **Out of disk in the middle of tracking.** Free space, then run Tracking again on its own. You do not need to redo the segmentation.
 
