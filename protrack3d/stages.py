@@ -182,6 +182,14 @@ def track(image, seg_folder=None, start=1, frames=None, trackback=2, reporter=No
     return result
 
 
+def check_analysis_range(start, end):
+    """The analysis compares each timepoint with the ones before it and skips timepoints 1 and 2, so it needs at
+    least two timepoints from timepoint 3 on."""
+    if end < max(start, 3) + 1:
+        raise RuntimeError(f'the analysis needs at least two timepoints from timepoint 3 on, and timepoints {start}-{end} '
+                           'do not have them. Choose a longer time range (at least 1-4).')
+
+
 def analyze(image, seg_folder, track_folder, start=1, end=None, reporter=None):
     add_repo_to_path()
     _headless_plots()
@@ -192,6 +200,7 @@ def analyze(image, seg_folder, track_folder, start=1, end=None, reporter=None):
     if end is None:
         params = pd.read_csv(os.path.join(seg_folder, 'segmentation_parameters.csv'))
         end = int(params['endTime'][0]) - int(params['startTime'][0]) + 1
+    check_analysis_range(start, end)
     reporter.stage('analysis', total=None, message=f'{os.path.basename(image)}, timepoints {start}-{end}')
     all_analysis_app(trackedimagepath=os.path.join(track_folder, 'TrackedCombined.nii'), segPath=seg_folder,
                      origImgPath=image, t1=start, t2=end)
@@ -273,9 +282,12 @@ def pipeline(image, model_path, out_dir=None, start=1, end=None, trackback=2, st
     seg_folder = segmentation_folder(image, out_dir)
     if 'track' in steps or 'analysis' in steps:
         check_path_length(tracking_folder(image, seg_folder))  # before segmentation, not after it
+    frames = (end or read_image_info(image)['t']) - start + 1
+    if 'analysis' in steps and frames < 4:  # before segmentation, not after it (see check_analysis_range)
+        raise RuntimeError(f'the analysis needs at least 4 timepoints, and timepoints {start}-{start + frames - 1} are '
+                           f'{frames}. Choose a longer time range.')
     if 'seg' in steps:
         results['seg'] = segment_image(image, model_path, out_dir, start, end, device=device, reporter=reporter)
-    frames = (end or read_image_info(image)['t']) - start + 1
     if 'track' in steps:
         results['track'] = track(image, seg_folder, 1, frames, trackback, reporter, seed, keep_working_folders=keep_working_folders)
     if 'analysis' in steps:

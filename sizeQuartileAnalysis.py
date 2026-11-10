@@ -161,23 +161,36 @@ color6 = ['orange','green','purple','magenta','cyan','red']
 category = 'size'
 
 def merge_dataframes_and_save(df_list, output_file):
-    dflist=[]
-    for df in df_list:
-        if 't' in df.columns:
-            # df = df.dropna()
-            # print(df.head())
-            df['t'] = df['t'].astype('Int64')  # Use 'Int64' for nullable integers
-            mint = df['t'].min()
-            maxt = df['t'].max()
-            complete_range = pd.DataFrame({'t': range(int(mint), int(maxt + 1))})
-            df_filled = pd.merge(complete_range, df, on='t', how='left')
-            df_filled = df_filled.fillna(0)
-            dflist.append(df_filled)
-        else:
-            dflist.append(df)
+    """Writes the tables side by side, one row per timepoint.
+
+    Every table with a 't' column gets the same rows, one per timepoint, so a row of the file is one timepoint.
+    Inside the timepoints a table covers, a missing row means no events there and becomes 0. Before or after them
+    (births cannot be counted at the first timepoint, nor splits at the last) the cells stay empty. A table with no
+    rows at all, such as no splits in a short time range, is all 0. The tables in df_list are replaced by the
+    filled ones, so the plots made from them afterwards get the same rows.
+    """
+    def timepoints(df):
+        df = df.assign(t=pd.to_numeric(df['t'], errors='coerce')).dropna(subset=['t'])
+        return df.assign(t=df['t'].astype(int))
+
+    def rows(first, last):
+        return pd.DataFrame({'t': range(first, last + 1)})
+
+    tables = [timepoints(df) for df in df_list if 't' in df.columns]
+    tables = [df for df in tables if len(df)]
+    if tables:
+        first, last = min(df['t'].min() for df in tables), max(df['t'].max() for df in tables)
+        for i, df in enumerate(df_list):
+            if 't' in df.columns:
+                df = timepoints(df)
+                if len(df):
+                    df = pd.merge(rows(df['t'].min(), df['t'].max()), df, on='t', how='left').fillna(0)
+                    df_list[i] = pd.merge(rows(first, last), df, on='t', how='left').infer_objects()
+                else:
+                    df_list[i] = pd.merge(rows(first, last), df, on='t', how='left').fillna(0).infer_objects()
 
     # Merge the DataFrames
-    merged_df = pd.concat(dflist, axis=1)
+    merged_df = pd.concat(df_list, axis=1)
 
     # Save the merged DataFrame to a CSV file
     merged_df.to_csv(output_file, index=False)
