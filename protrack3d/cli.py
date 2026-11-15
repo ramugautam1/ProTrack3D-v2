@@ -138,6 +138,7 @@ def main(argv=None):
     p.add_argument('--no-threshold', action='store_true', help='measure without the background threshold')
     p.add_argument('--csv', help='name of the summary table (default ARM_DIA_Summary.csv; with --no-threshold, _RAW is added)')
     p.add_argument('--steps', default='prepare,segment,quantify')
+    p.add_argument('--resegment', action='store_true', help='segment every stack again, even when an earlier mask was made with the same settings')
     p.add_argument('--device', default='auto')
 
     p = sub.add_parser('armdia-boundary', help='Armadillo puncta on and off the cell boundary (needs cell-outline images)')
@@ -229,7 +230,7 @@ def run(args, reporter):
         from .armdia import run as run_armdia
         z_start, z_end = (1, args.z_layers) if args.z_layers else (args.z_start, args.z_end)
         run_armdia(args.folder, _model_path(args.model), z_start, z_end, args.size_filter, args.arm_channel, args.dia_channel,
-                   args.arm_only, not args.no_threshold, args.csv, tuple(args.steps.split(',')), args.device, reporter)
+                   args.arm_only, not args.no_threshold, args.csv, tuple(args.steps.split(',')), args.device, reporter, args.resegment)
     elif args.command == 'armdia-boundary':
         from .armdia_boundary import run as run_boundary
         run_boundary(args.folder, None, args.outlines, args.current_width, args.target_width, args.overlap, args.z_suffix, reporter)

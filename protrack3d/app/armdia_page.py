@@ -32,6 +32,9 @@ class ArmDiaPage(Page):
         card.row('Slices', inline(text('Use z slices', 'sub'), self.z_start, text('to', 'sub'), self.z_end),
                  'Counted from 1, both included. An image with fewer slices uses up to its last one.')
         card.row('Smallest object', inline(text('Remove puncta of', 'sub'), self.size_filter, text('voxels or fewer', 'sub')))
+        self.resegment = QCheckBox('Segment every image again, even when an earlier mask matches')
+        card.row('Segmentation', self.resegment, 'Left off, a mask from an earlier run with the same model, slices, Armadillo channel '
+                 'and size filter is reused, so changing only the background setting or the table name is quick.')
         self.threshold = QCheckBox('Before measuring, set everything at or below background (mean + 3 standard deviations) to zero')
         self.threshold.setChecked(True)
         card.row('Background', self.threshold, 'Background is everything outside the Armadillo puncta.')
@@ -109,6 +112,8 @@ class ArmDiaPage(Page):
             args.append('--arm-only')
         if not self.threshold.isChecked():
             args.append('--no-threshold')
+        if self.resegment.isChecked():
+            args.append('--resegment')
         name = self.table.text().strip()
         if name:
             args += ['--csv', name if name.lower().endswith('.csv') else name + '.csv']

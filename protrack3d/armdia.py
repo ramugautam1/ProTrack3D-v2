@@ -109,27 +109,67 @@ def remove_small_objects(mask, size_filter):
     return keep[labels]
 
 
-def segment_arm(arm_path, model, device, size_filter=160):
-    """<name>_ARM.tif (ZYX) -> <name>_ARM_SEG.tif, the mask as 0 / 65535. Returns (path, number of objects)."""
+SEGMENTATION_METHOD = 1  # raise when segment_arm changes, so masks made the old way are not reused
+
+
+def file_sha1(path):
+    import hashlib
+    h = hashlib.sha1()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 22), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def pixels_sha1(data):
+    import hashlib
+    h = hashlib.sha1(f'{data.dtype}{data.shape}'.encode())
+    h.update(np.ascontiguousarray(data).tobytes())
+    return h.hexdigest()
+
+
+def mask_record(seg_path):
+    """What an <name>_ARM_SEG.tif was made from, as segment_arm stored it in the file, or None (no file, or one made
+    before masks carried this record)."""
+    import json
+    import tifffile
+    try:
+        with tifffile.TiffFile(seg_path) as f:
+            return json.loads((f.imagej_metadata or {}).get('Info', ''))
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def segment_arm(arm_path, model, device, size_filter=160, settings=None):
+    """<name>_ARM.tif (ZYX) -> <name>_ARM_SEG.tif, the mask as 0 / 65535. Returns (path, number of objects).
+    The mask file records the settings it was made with and a fingerprint of the Armadillo stack, so a later run
+    with the same model, slices, channel and size filter can reuse it instead of segmenting again."""
+    import json
     import scipy.ndimage as ndi
     import tifffile
     from .segmentation import segment_timepoint
-    volume = np.transpose(tifffile.imread(arm_path), (2, 1, 0))  # x, y, z
+    arm = tifffile.imread(arm_path)
+    volume = np.transpose(arm, (2, 1, 0))  # x, y, z
     mask, _ = segment_timepoint(model, device, volume, normalise='stack', with_features=False)
     mask = remove_small_objects(mask, size_filter)
+    objects = int(ndi.label(mask, structure=ndi.generate_binary_structure(3, 1))[1])
     out = os.path.splitext(arm_path)[0] + '_SEG.tif'
-    tifffile.imwrite(out, (np.transpose(mask, (2, 1, 0)).astype(np.uint16) * 65535), imagej=True, metadata={'axes': 'ZYX'})
-    return out, int(ndi.label(mask, structure=ndi.generate_binary_structure(3, 1))[1])
+    record = {'settings': dict(settings or {}, arm=pixels_sha1(arm)), 'objects': objects}
+    tifffile.imwrite(out, (np.transpose(mask, (2, 1, 0)).astype(np.uint16) * 65535), imagej=True,
+                     metadata={'axes': 'ZYX', 'Info': json.dumps(record)})
+    return out, objects
 
 
 def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, dia_channel=3, arm_only=False, threshold=True,
-        csv_name=None, steps=('prepare', 'segment', 'quantify'), device=None, reporter=None):
+        csv_name=None, steps=('prepare', 'segment', 'quantify'), device=None, reporter=None, resegment=False):
     """Run the workflow on every source image under `root`. Channels and z slices are counted from 1; slices z_start to
     z_end (both included) are used, or up to the last slice when an image has fewer.
 
     arm_only: the images hold only Armadillo (its channel is still `arm_channel`); nothing is done for Dia.
     threshold: before measuring, set voxels at or below (background mean + 3 standard deviations) to zero, the
     background being everything outside the Armadillo mask. Applied to Dia, or to Armadillo when arm_only.
+    resegment: segment every stack, even one whose earlier mask was made with the same model, size filter and
+    Armadillo stack (by default that mask is reused, so changing only the threshold or table name is quick).
     """
     import tifffile
     reporter = reporter or Reporter()
@@ -169,16 +209,30 @@ def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, d
 
     if 'segment' in steps:
         names = [n for n in names if os.path.isfile(n + '_ARM.tif')]  # a skipped picture has none
+        settings = {'method': SEGMENTATION_METHOD, 'model': os.path.basename(model_path), 'model_sha1': file_sha1(model_path),
+                    'size_filter': int(size_filter)}
+        objects, todo = {}, []
+        for name in names:  # a mask made with these settings from this same Armadillo stack is kept
+            record = None if resegment else mask_record(name + '_ARM_SEG.tif')
+            if record and record.get('settings') == dict(settings, arm=pixels_sha1(tifffile.imread(name + '_ARM.tif'))):
+                objects[name] = record['objects']
+            else:
+                todo.append(name)
+        reused = len(names) - len(todo)
         device = pick_device(device)
-        reporter.stage('segmentation', total=len(names), message=f'{len(names)} Armadillo stacks on {device.type}, objects of {size_filter} voxels or fewer removed')
-        model, meta = load_model(model_path, device)
-        objects = []
-        for i, name in enumerate(names):
-            _, n = segment_arm(name + '_ARM.tif', model, device, size_filter)
-            objects.append(n)
-            reporter.progress(i + 1, len(names), f'{os.path.basename(name)}: {n} objects')
-        result.update(model=meta.get('name'), device=device.type, objects=objects)
-        reporter.stage_done(objects=objects)
+        reporter.stage('segmentation', total=len(names), message=f'{len(todo)} Armadillo stacks on {device.type}, objects of {size_filter} voxels or fewer removed'
+                       + (f'; {reused} masks from an earlier run reused (same model, slices, channel and size filter)' if reused else ''))
+        for i, name in enumerate(n for n in names if n in objects):
+            reporter.progress(i + 1, len(names), f'{os.path.basename(name)}: {objects[name]} objects (earlier mask reused)')
+        meta = {'name': os.path.splitext(os.path.basename(model_path))[0]}
+        if todo:
+            model, meta = load_model(model_path, device)
+            for i, name in enumerate(todo):
+                _, objects[name] = segment_arm(name + '_ARM.tif', model, device, size_filter, settings)
+                reporter.progress(reused + i + 1, len(names), f'{os.path.basename(name)}: {objects[name]} objects')
+        objects = [objects[n] for n in names]
+        result.update(model=meta.get('name'), device=device.type, objects=objects, masks_reused=reused)
+        reporter.stage_done(objects=objects, reused=reused)
 
     if 'quantify' in steps:
         add_repo_to_path()
