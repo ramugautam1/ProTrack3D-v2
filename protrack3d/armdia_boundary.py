@@ -3,14 +3,18 @@
 A port of the notebook "Boundary Dialate and ARM quantify.ipynb", with its two steps:
 
   1. every 2D cell-outline image is thickened from `current_width` to `target_width` pixels, repeated on every z
-     slice, and saved as <image>_Boundary_<width>.tif under <outlines>/Dilated/Embryo NN/;
+     slice, and saved as <image>_Boundary_<width>.tif under <outlines>/Dilated/Embryo NN/ (or, when the outlines sit
+     next to their images, under Dilated/ in the image's folder). An outline whose line is already ALREADY_DILATED
+     pixels wide or more was thickened before and is used as it is;
   2. every punctum of <image>_ARM_SEG.tif is called a boundary punctum when at least `overlap` of its voxels lie on
      the thickened outline; per-punctum and per-image tables are written.
 
 The notebook measures Armadillo only. When <image>_DIA.tif is there too, Dia is measured in the same puncta and its
 columns (ending in _dia) are added after the Armadillo ones; the Armadillo columns are unchanged.
 
-Folders are matched by embryo number ("embryo 3", "Embryo 03") and files by name. An outline file is the image name
+The outlines are either in a "Cell Outlines" folder, with one subfolder per embryo matched to the image folders by
+embryo number ("embryo 3", "Embryo 03"), or, when there is no such folder, next to their images. Files are matched by
+name. An outline file is the image name
 with, optionally, a channel or projection prefix in front (C2-, C1-MAX_, MAX_C2-, MAX_) and an outline word at the end
 (outline only, outlineonly, outline_only, cell outline, outline). Names are compared ignoring case and treating spaces,
 underscores and hyphens alike. Outlines may be .tif or .tiff, or an ImageJ TIFF saved under a .czi name. Files with the
@@ -101,6 +105,22 @@ def outline_files(folder):
     return out
 
 
+# An outline at least this wide was thickened already and is not thickened again.
+# TODO: raise to 30 (the target width) once the already-dilated outlines are all 30 pixels wide.
+ALREADY_DILATED = 26
+
+
+def line_width(outline):
+    """Width of the drawn line in pixels: twice the median distance from its centre line to its edge, minus one."""
+    from scipy.ndimage import distance_transform_edt
+    from skimage.morphology import skeletonize
+    mask = np.asarray(outline) > 0
+    centre = skeletonize(mask)
+    if not centre.any():
+        return 0.0
+    return float(2 * np.median(distance_transform_edt(mask)[centre]) - 1)
+
+
 def dilate_outline(outline, current_width, target_width):
     from scipy.ndimage import binary_dilation
     from skimage.morphology import disk
@@ -182,9 +202,20 @@ def analyze_image(name, image_folder, boundary_path, embryo, root, overlap):
     return df, summary
 
 
+def image_folders_with_outlines(root):
+    """Every folder under root holding prepared images (<name>_ARM.tif), for outlines kept next to their images."""
+    found = []
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d.lower() not in ('cell outlines', 'dilated'))
+        if any(f.endswith('_ARM.tif') for f in files):
+            found.append(Path(folder))
+    return found
+
+
 def run(root, embryos=None, outlines=None, current_width=6, target_width=30, overlap=0.30, z_suffix='-20z', reporter=None):
     """Run both steps. `root` holds the embryo folders (directly, or in "Embryos"); the "Cell Outlines" folder is
-    inside it or next to it, unless `outlines` names another."""
+    inside it or next to it, unless `outlines` names another. With no such folder, the outlines are looked for next to
+    their images."""
     import pandas as pd
     import tifffile
     reporter = reporter or Reporter()
@@ -193,50 +224,75 @@ def run(root, embryos=None, outlines=None, current_width=6, target_width=30, ove
     outlines_root = Path(outlines) if outlines else root / 'Cell Outlines'
     if not outlines and not outlines_root.is_dir() and (root.parent / 'Cell Outlines').is_dir():
         outlines_root = root.parent / 'Cell Outlines'  # kept next to the folder of embryos rather than inside it
-    if not outlines_root.is_dir():
+    if outlines and not outlines_root.is_dir():
         raise ValueError(f'There is no outlines folder at {outlines_root}.')
-    image_folders = embryo_folders(embryos_root, skip=('cell outlines', 'dilated'))
-    outline_folders = embryo_folders(outlines_root, skip=('dilated',))
     notes = []
-    for key in sorted(set(image_folders) - set(outline_folders)):
-        notes.append(f'embryo {key}: no outline folder')
-    for key in sorted(set(outline_folders) - set(image_folders)):
-        notes.append(f'embryo {key}: outlines but no image folder')
+    groups = []  # (embryo, image folder, outline folder, folder for the thickened outlines)
+    if outlines_root.is_dir():
+        image_folders = embryo_folders(embryos_root, skip=('cell outlines', 'dilated'))
+        outline_folders = embryo_folders(outlines_root, skip=('dilated',))
+        for key in sorted(set(image_folders) - set(outline_folders)):
+            notes.append(f'embryo {key}: no outline folder')
+        for key in sorted(set(outline_folders) - set(image_folders)):
+            notes.append(f'embryo {key}: outlines but no image folder')
+        groups = [(key, image_folders[key], outline_folders[key], outlines_root / 'Dilated' / f'Embryo {key:02d}')
+                  for key in sorted(set(image_folders) & set(outline_folders))]
+    else:  # no "Cell Outlines" folder: each outline sits next to its image
+        groups = [(extract_embryo_key(folder.name), folder, folder, folder / 'Dilated')
+                  for folder in image_folders_with_outlines(embryos_root)]
+        if not groups:
+            raise ValueError(f'There is no "Cell Outlines" folder, and no prepared images (_ARM.tif) under {embryos_root}: '
+                             'run "Measure" first.')
 
-    pairs = []  # (embryo, image folder, full name, outline path)
-    for key in sorted(set(image_folders) & set(outline_folders)):
-        images, lines = arm_images(image_folders[key], z_suffix), outline_files(outline_folders[key])
+    pairs = []  # (embryo, image folder, full name, image path, outline path, folder for the thickened outline)
+    for key, image_folder, outline_folder, dilated_folder in groups:
+        where = f'embryo {key}' if key is not None else image_folder.name
+        images, lines = arm_images(image_folder, z_suffix), outline_files(outline_folder)
         for name in sorted(set(images) - set(lines)):
-            notes.append(f'embryo {key}: no outline for {name}')
+            notes.append(f'{where}: no outline for {name}')
         for name in sorted(set(lines) - set(images)):
-            notes.append(f'embryo {key}: outline {name} matches no image')
-        pairs += [(key, image_folders[key], images[m][0], images[m][1], lines[m]) for m in sorted(set(images) & set(lines))]
+            notes.append(f'{where}: outline {name} matches no image')
+        pairs += [(key, image_folder, images[m][0], images[m][1], lines[m], dilated_folder) for m in sorted(set(images) & set(lines))]
     if not pairs:
         raise ValueError('No image could be matched to an outline. ' + '; '.join(notes[:6]))
 
     pct = int(overlap * 100)
-    reporter.stage('boundary analysis', total=len(pairs), message=f'{len(pairs)} images; outlines thickened from {current_width} to {target_width} pixels; '
+    reporter.stage('boundary analysis', total=len(pairs), message=f'{len(pairs)} images; outlines thickened from {current_width} to {target_width} pixels '
+                                                                  f'(those already {ALREADY_DILATED} or wider are used as they are); '
                                                                   f'a punctum is on the boundary when {pct} % of it overlaps')
-    tables, summaries = [], []
-    for n, (key, folder, name, arm_path, outline_path) in enumerate(pairs):
+    tables, summaries, mismatched = [], [], []
+    for n, (key, folder, name, arm_path, outline_path, out_folder) in enumerate(pairs):
+        where = f'embryo {key}, {name}' if key is not None else name
         try:
             z, y, x = tifffile.imread(arm_path).shape
             outline = read_outline(outline_path)
             if outline.shape != (y, x):
-                raise ValueError(f'outline is {outline.shape}, image is {(y, x)}')
-            dilated, _ = dilate_outline(outline, current_width, target_width)
-            out_folder = outlines_root / 'Dilated' / f'Embryo {key:02d}'
+                mismatched.append(dict(image=str(arm_path.relative_to(root.parent)), outline=str(outline_path.relative_to(root.parent)),
+                                       image_height=y, image_width=x, outline_height=outline.shape[0], outline_width=outline.shape[1]))
+                raise ValueError(f'SIZE MISMATCH: the outline is {outline.shape[1]} x {outline.shape[0]} pixels and the image '
+                                 f'{x} x {y}. Draw the outline on this crop of the image.')
+            width = line_width(outline)
+            thicken = width < ALREADY_DILATED
+            dilated = dilate_outline(outline, current_width, target_width)[0] if thicken else outline > 0
             out_folder.mkdir(parents=True, exist_ok=True)
             boundary_path = out_folder / f'{name}_Boundary_{target_width}.tif'
             tifffile.imwrite(boundary_path, (np.broadcast_to(dilated, (z, y, x)).astype(np.uint8) * 65535).astype(np.uint16))
             df, summary = analyze_image(name, folder, boundary_path, key, root, overlap)
+            summary.update(outline_line_width=round(width, 1), outline_thickened=thicken)
             tables.append(df)
             summaries.append(summary)
-            reporter.progress(n + 1, len(pairs), f'{name}: {summary["n_puncta_boundary"]} on the boundary, {summary["n_puncta_interior"]} inside')
+            reporter.progress(n + 1, len(pairs), f'{name}: {summary["n_puncta_boundary"]} on the boundary, {summary["n_puncta_interior"]} inside'
+                              + ('' if thicken else f' (outline already {width:.0f} pixels wide, not thickened)'))
         except Exception as e:
-            notes.append(f'embryo {key}, {name}: {e}')
+            notes.append(f'{where}: {e}')
             reporter.progress(n + 1, len(pairs), f'{name}: skipped ({e})')
     result = {'images': len(summaries), 'skipped': notes}
+    mismatch_table = root / 'outline_size_mismatches.csv'
+    if mismatched:  # listed in a table of their own, so they are not missed
+        result['size_mismatches'] = str(mismatch_table)
+        pd.DataFrame(mismatched).to_csv(mismatch_table, index=False)
+    elif mismatch_table.exists():
+        mismatch_table.unlink()  # from an earlier run; the outlines have been fixed since
     if tables:
         pd.concat(tables, ignore_index=True).to_csv(root / f'all_puncta_{pct}pct.csv', index=False)
         result['table'] = str(root / f'all_threshold_summary_{pct}pct_wide.csv')

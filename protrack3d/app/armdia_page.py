@@ -5,6 +5,7 @@ from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLineEdit
 
 from ..armdia import describe_folder, summary_name
+from ..armdia_boundary import ALREADY_DILATED
 from .jobs import Job
 from .pages import Page, inline, spin
 from .widgets import Card, ModelBox, PathField, button, text
@@ -44,11 +45,13 @@ class ArmDiaPage(Page):
         self.body.takeAt(self.body.count() - 1)  # the stretch; the second card goes below the first
 
         second = Card('Puncta on the cell boundary')
-        second.add(text('Needs a "Cell Outlines" folder next to the embryo folders, with one outline image per stack. Each outline is '
-                        'thickened, and a punctum counts as a boundary punctum when enough of it lies on the outline. Run "Measure" first.', 'sub', wrap=True))
-        self.outlines = second.row('Outlines folder', PathField(ctx.theme, 'folder', '"Cell Outlines" inside or next to the folder above'))
+        second.add(text('Needs one outline image per stack: next to its image ("<name> cell outline.tif"), or in a "Cell Outlines" '
+                        'folder next to the embryo folders. Each outline is thickened, and a punctum counts as a boundary punctum '
+                        'when enough of it lies on the outline. Run "Measure" first.', 'sub', wrap=True))
+        self.outlines = second.row('Outlines folder', PathField(ctx.theme, 'folder', 'Optional: "Cell Outlines" inside or next to the folder above, or next to each image'))
         self.current, self.target, self.overlap = spin(1, 999, 6, 56), spin(1, 999, 30, 56), spin(1, 100, 30, 56)
-        second.row('Outline width', inline(text('Drawn at', 'sub'), self.current, text('pixels, thicken to', 'sub'), self.target, text('pixels', 'sub')))
+        second.row('Outline width', inline(text('Drawn at', 'sub'), self.current, text('pixels, thicken to', 'sub'), self.target, text('pixels', 'sub')),
+                   f'Outlines already {ALREADY_DILATED} pixels wide or more were thickened before and are used as they are.')
         second.row('On the boundary when', inline(self.overlap, text('% or more of the punctum overlaps', 'sub')))
         self.body.addWidget(second)
         bar = QHBoxLayout()
@@ -118,11 +121,12 @@ class ArmDiaPage(Page):
     def submit_boundary(self):
         if not self.folder.path:
             return 'Choose the folder of images at the top first.'
-        outlines = self.outlines.path or os.path.join(self.folder.path, 'Cell Outlines')
-        if not os.path.isdir(outlines):
-            return f'There is no outlines folder at {outlines}.'
+        if self.outlines.path and not os.path.isdir(self.outlines.path):
+            return f'There is no outlines folder at {self.outlines.path}.'
         if self.target.value() <= self.current.value():
             return 'The thickened width must be larger than the drawn width.'
-        args = ['armdia-boundary', self.folder.path, '--outlines', outlines, '--current-width', str(self.current.value()),
+        args = ['armdia-boundary', self.folder.path, '--current-width', str(self.current.value()),
                 '--target-width', str(self.target.value()), '--overlap', str(self.overlap.value() / 100)]
+        if self.outlines.path:  # otherwise "Cell Outlines" inside or next to the folder, or the outlines next to the images
+            args += ['--outlines', self.outlines.path]
         self.ctx.submit(Job(f'Boundary puncta  ·  {os.path.basename(self.folder.path.rstrip("/"))}', args, ['boundary analysis'], folder=self.folder.path))

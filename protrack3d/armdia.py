@@ -37,14 +37,16 @@ def summary_name(csv_name=None, arm_only=False, threshold=True):
 
 def find_sources(root):
     """Source images under root: .czi files, and .tif files that are not outputs of this workflow or outlines.
-    A .tif next to a .czi of the same name is a converted copy and is skipped."""
+    A .tif next to a .czi of the same name is a converted copy and is skipped. Cell outlines ("<name> cell outline.tif",
+    "<name>_outline.tif", ...) are skipped by name, wherever they are."""
+    from .armdia_boundary import OUTLINE_WORD
     found = []
     for folder, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if d.lower() not in ('cell outlines', 'dilated'))
         czi = {os.path.splitext(f)[0] for f in files if f.lower().endswith('.czi')}
         for f in sorted(files):
             stem, ext = os.path.splitext(f)
-            if f.startswith('.') or ext.lower() not in ('.czi',) + TIFF_EXTENSIONS:
+            if f.startswith('.') or ext.lower() not in ('.czi',) + TIFF_EXTENSIONS or OUTLINE_WORD.search(stem):
                 continue
             derived = f.lower().endswith(tuple(d.lower() for d in DERIVED) + tuple(d.lower() + 'f' for d in DERIVED)) or '_boundary_' in f.lower()
             if ext.lower() == '.czi' or (not derived and stem not in czi):

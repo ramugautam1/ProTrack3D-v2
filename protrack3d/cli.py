@@ -141,9 +141,9 @@ def main(argv=None):
     p.add_argument('--device', default='auto')
 
     p = sub.add_parser('armdia-boundary', help='Armadillo puncta on and off the cell boundary (needs cell-outline images)')
-    p.add_argument('folder', help='holds the embryo folders (directly or in "Embryos") and "Cell Outlines"')
+    p.add_argument('folder', help='holds the embryo folders (directly or in "Embryos") and "Cell Outlines", or images with their outlines next to them')
     p.add_argument('--outlines', help='the outlines folder, if it is somewhere else')
-    p.add_argument('--current-width', type=int, default=6, help='width of the drawn outline, in pixels')
+    p.add_argument('--current-width', type=int, default=6, help='width of the drawn outline, in pixels (outlines already 26 or wider are not thickened)')
     p.add_argument('--target-width', type=int, default=30, help='width to thicken it to')
     p.add_argument('--overlap', type=float, default=0.30, help='share of a punctum that must lie on the boundary')
     p.add_argument('--z-suffix', default='-20z', help='ending of image names that outline names do not have')
