@@ -833,8 +833,7 @@ class HomePage(Page):
             'available': f"A newer version is available ({version(info.get('latest'))}).",
             'updating': 'Updating. The Jobs page shows how far it is.',
             'updated': 'Updated. Start ProTrack3D again to use the new version.',
-            'error': f'That did not work: {u.error}',
-            'packaged': 'This is the packaged app. It cannot update itself; get the new version from GitHub.'}[state])
+            'error': f'That did not work: {u.error}'}[state])
         rename(self.update_text, 'error' if state == 'error' else 'sub')
         news = ''
         if state == 'available':

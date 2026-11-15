@@ -7,7 +7,7 @@ import time
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from ..events import MARKER
-from ..paths import FROZEN, REPO_ROOT
+from ..paths import REPO_ROOT
 
 STAGE_LABELS = {'segmentation': 'Segmentation', 'tracking': 'Tracking', 'analysis': 'Analysis', 'family tree': 'Family tree',
                 'training': 'Training', 'download': 'Download', 'update': 'Update', 'saving image': 'Saving', 'preparation': 'Preparation',
@@ -15,9 +15,7 @@ STAGE_LABELS = {'segmentation': 'Segmentation', 'tracking': 'Tracking', 'analysi
 
 
 def engine_command():
-    """How to start the engine. A packaged app re-launches itself; from source it is `python -m protrack3d`."""
-    if getattr(sys, 'frozen', False):
-        return sys.executable, ['--engine']
+    """How to start the engine: `python -m protrack3d`, with the Python the app runs on."""
     python = sys.executable
     if os.path.basename(python).lower() == 'pythonw.exe':  # the windowless Python has no output to read
         python = os.path.join(os.path.dirname(python), 'python.exe')
@@ -119,7 +117,7 @@ class JobManager(QObject):
         env = QProcessEnvironment.systemEnvironment()
         env.insert('PYTHONUNBUFFERED', '1')
         self.process.setProcessEnvironment(env)
-        self.process.setWorkingDirectory(os.path.expanduser('~') if FROZEN else REPO_ROOT)
+        self.process.setWorkingDirectory(REPO_ROOT)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._finished)

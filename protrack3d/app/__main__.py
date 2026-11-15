@@ -5,12 +5,8 @@ ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.png')
 
 
 def main():
-    if '--engine' in sys.argv:  # a packaged app runs its own engine through this switch
-        from ..cli import main as engine
-        return engine(sys.argv[sys.argv.index('--engine') + 1:])
     # The name and icon in the Dock come from the launcher, which starts Python through a small app bundle on macOS.
-    frozen = getattr(sys, 'frozen', False)  # the packaged app has its own name and icon
-    if sys.platform == 'win32' and not frozen:
+    if sys.platform == 'win32':
         import ctypes
         try:  # so the taskbar shows ProTrack3D's icon rather than Python's
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ProTrack3D.App')

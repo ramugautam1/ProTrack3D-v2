@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QProcess, Signal
 from PySide6.QtWidgets import QApplication
 
 from ..events import MARKER
-from ..paths import FROZEN, REPO_ROOT
+from ..paths import REPO_ROOT
 from .jobs import Job, engine_command
 
 
@@ -16,8 +16,8 @@ class Updater(QObject):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.ctx = ctx
-        # unknown, checking, current, available, updating, updated, error, or packaged (the packaged app cannot update itself)
-        self.state = 'packaged' if FROZEN else 'unknown'
+        # unknown, checking, current, available, updating, updated or error
+        self.state = 'unknown'
         self.info, self.error, self.job, self.probe, self.quiet = {}, '', None, None, False
         ctx.jobs.finished.connect(self._job_finished)
 
@@ -30,7 +30,7 @@ class Updater(QObject):
 
     def check(self, quiet=False):
         """Ask the engine whether a newer version is published. A quiet check (the one at start-up) says nothing when it fails."""
-        if self.state in ('packaged', 'checking', 'updating', 'updated'):
+        if self.state in ('checking', 'updating', 'updated'):
             return
         self.quiet = quiet is True
         program, prefix = engine_command()
@@ -66,7 +66,7 @@ class Updater(QObject):
 
     def install(self):
         """Start the update. Returns a message when it cannot be started."""
-        if self.state in ('packaged', 'updating'):
+        if self.state == 'updating':
             return None
         if self.ctx.jobs.active_count():
             return 'Jobs are still running. Wait for them to finish, or cancel them, then update.'

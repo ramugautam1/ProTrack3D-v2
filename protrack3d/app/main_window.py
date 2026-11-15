@@ -6,7 +6,7 @@ from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QPushButton, QSplitter, QVBoxLayout, QWidget
 
-from ..paths import FROZEN, REPO_ROOT
+from ..paths import REPO_ROOT
 from . import icons
 from .armdia_page import ArmDiaPage
 from .console import Console
@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
     def ask_device(self):
         program, prefix = engine_command()
         probe = QProcess(self)
-        probe.setWorkingDirectory(os.path.expanduser('~') if FROZEN else REPO_ROOT)
+        probe.setWorkingDirectory(REPO_ROOT)
 
         def done(*_):
             try:

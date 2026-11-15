@@ -2,7 +2,7 @@
 
 A git clone is brought up to date with git. A ZIP download has no history, so its files are compared with the
 published ones and the ones that differ are replaced from a fresh download. Models, results and anything else
-that is not part of the published code are left alone. The packaged app cannot update itself.
+that is not part of the published code are left alone.
 """
 import hashlib
 import json
@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 from .events import Reporter
-from .paths import FROZEN, REPO_ROOT
+from .paths import REPO_ROOT
 
 REPO = os.environ.get('PROTRACK3D_UPDATE_REPO') or 'ramugautam1/ProTrack3D-v2'
 BRANCH = 'main'
@@ -27,9 +27,7 @@ REQUIREMENTS = os.path.join(REPO_ROOT, 'requirements.txt')
 
 
 def kind():
-    """How this copy was installed: 'packaged', 'git' or 'zip'."""
-    if FROZEN:
-        return 'packaged'
+    """How this copy was installed: 'git' or 'zip'."""
     if os.path.exists(os.path.join(REPO_ROOT, '.git')) and shutil.which('git'):
         return 'git'
     return 'zip'
@@ -104,8 +102,6 @@ def _git_version(ref):
 def check():
     """Is a newer version published? Returns a dict; 'available' is True when updating would change something."""
     how = kind()
-    if how == 'packaged':
-        return {'kind': how, 'available': False, 'changes': [], 'current': None, 'latest': None}
     if how == 'git':
         news = _git_news()
         result = {'kind': how, 'available': bool(news), 'changes': news, 'files': None,
@@ -203,8 +199,6 @@ def apply(reporter=None):
     """Bring this copy up to the newest published version. The app has to be started again afterwards."""
     reporter = reporter or Reporter()
     how = kind()
-    if how == 'packaged':
-        raise RuntimeError('the packaged app cannot update itself. Download the new version instead.')
     reporter.stage('update', total=100, message='looking for a newer version')
     packages_before = _file_id(REQUIREMENTS)
     if how == 'git':
