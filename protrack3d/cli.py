@@ -136,7 +136,7 @@ def main(argv=None):
     p.add_argument('--dia-channel', type=int, default=3, help='channel holding Dia, counted from 1')
     p.add_argument('--arm-only', action='store_true', help='the images hold Armadillo only')
     p.add_argument('--no-threshold', action='store_true', help='measure without the background threshold')
-    p.add_argument('--csv', help='name of the summary table (default ARM_DIA_Summary.csv)')
+    p.add_argument('--csv', help='name of the summary table (default ARM_DIA_Summary.csv; with --no-threshold, _RAW is added)')
     p.add_argument('--steps', default='prepare,segment,quantify')
     p.add_argument('--device', default='auto')
 

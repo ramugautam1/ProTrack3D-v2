@@ -24,6 +24,17 @@ DERIVED = ('_ARM.tif', '_DIA.tif', '_ARM_SEG.tif', '_ARM_MSK.tif', '_ARM_MP3.tif
            'DIA_MP3.tif', '_cell_outline.tif', '_SEG.tif', 'pct.tif')
 
 
+def summary_name(csv_name=None, arm_only=False, threshold=True):
+    """File name of the summary table. Without the background threshold the name says RAW, so the two kinds of
+    table are never mixed up: ARM_DIA_Summary_RAW.csv, or the name given with _RAW added before .csv."""
+    name = csv_name or ('ARM_Summary.csv' if arm_only else 'ARM_DIA_Summary.csv')
+    if not name.lower().endswith('.csv'):
+        name += '.csv'
+    if not threshold and 'raw' not in name.lower():
+        name = name[:-4] + '_RAW.csv'
+    return name
+
+
 def find_sources(root):
     """Source images under root: .czi files, and .tif files that are not outputs of this workflow or outlines.
     A .tif next to a .czi of the same name is a converted copy and is skipped."""
@@ -173,15 +184,13 @@ def run(root, model_path, z_start=1, z_end=20, size_filter=160, arm_channel=2, d
             import segment.batch_quantify_arm_from_armseg as original
             original.ARM_SUFFIX, original.SEG_SUFFIX = '_ARM.tif', '_ARM_SEG.tif'
             original.ARM_MSK_SUFFIX, original.ARM_T_SUFFIX = '_ARM_MSK.tif', '_ARM_MP3.tif'
-            default_name = 'ARM_Summary.csv'
         else:
             import segment.batch_mask_dia_from_armseg as original
             original.DIA_SUFFIX, original.SEG_SUFFIX, original.MSK_SUFFIX = '_DIA.tif', '_ARM_SEG.tif', '_DIA_MSK.tif'
             original.ARM_MSK_SUFFIX, original.ARM_SUFFIX = '_ARM_MSK.tif', '_ARM.tif'
             original.DIA_2_SUFFIX, original.DIA_T_SUFFIX = '_DIA_SNR.tif', '_DIA_MP3.tif'
-            default_name = 'ARM_DIA_Summary.csv'
         original.ROOT = root
-        original.CSV_OUT = os.path.join(root, csv_name or default_name)
+        original.CSV_OUT = os.path.join(root, summary_name(csv_name, arm_only, threshold))
         reporter.stage('quantification', total=len(sources), message='measuring inside and outside the Armadillo mask'
                        + (', with the background threshold' if threshold else ''))
         seen = []

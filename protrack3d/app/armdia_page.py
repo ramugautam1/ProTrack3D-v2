@@ -4,7 +4,7 @@ import os
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLineEdit
 
-from ..armdia import describe_folder
+from ..armdia import describe_folder, summary_name
 from .jobs import Job
 from .pages import Page, inline, spin
 from .widgets import Card, ModelBox, PathField, button, text
@@ -35,8 +35,10 @@ class ArmDiaPage(Page):
         self.threshold.setChecked(True)
         card.row('Background', self.threshold, 'Background is everything outside the Armadillo puncta.')
         self.table = QLineEdit()
-        self.table.setPlaceholderText('ARM_DIA_Summary.csv')
-        card.row('Name of the table', self.table)
+        card.row('Name of the table', self.table, 'Without the background threshold, the name ends in _RAW.')
+        self.threshold.toggled.connect(self._show_table_name)
+        self.arm_only.toggled.connect(self._show_table_name)
+        self._show_table_name()
         self.body.addWidget(card)
         self.add_run_bar('Run', self.submit)
         self.body.takeAt(self.body.count() - 1)  # the stretch; the second card goes below the first
@@ -109,6 +111,9 @@ class ArmDiaPage(Page):
             args += ['--csv', name if name.lower().endswith('.csv') else name + '.csv']
         self.ctx.submit(Job(f'Armadillo / Dia  ·  {os.path.basename(self.folder.path.rstrip("/"))}', args,
                             ['preparation', 'segmentation', 'quantification'], folder=self.folder.path))
+
+    def _show_table_name(self):
+        self.table.setPlaceholderText(summary_name(None, self.arm_only.isChecked(), self.threshold.isChecked()))
 
     def submit_boundary(self):
         if not self.folder.path:

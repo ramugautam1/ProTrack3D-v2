@@ -10,6 +10,8 @@ import scipy.ndimage as ndi
 
 
 def threshold_by_mp3(data, mask):
+    """Returns a copy of data with every voxel at or below (background mean + 3 SD) set to zero, the background
+    being everything outside the mask. data itself is left as it was."""
     print(data.shape, mask.shape)
     bool_mask = mask.astype(bool)
     bg_voxels = data[~bool_mask]
@@ -17,8 +19,9 @@ def threshold_by_mp3(data, mask):
     bg_std = np.std(bg_voxels)
     val = bg_mean + 3* bg_std
 
-    data[data<= val] = 0
-    return data
+    out = data.copy()
+    out[out <= val] = 0
+    return out
 
 def count_objects(mask: np.ndarray) -> int:
     """
@@ -176,8 +179,7 @@ def main(threshold=False):
 
 
             if threshold==True:
-                dia_t = copy.deepcopy(dia)
-                dia_t = threshold_by_mp3(dia, seg)
+                dia_t = threshold_by_mp3(dia, seg)  # a thresholded copy; dia stays raw for _DIA_SNR.tif
             else:
                 dia_t =  copy.deepcopy(dia)
 
