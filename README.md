@@ -10,12 +10,16 @@ It runs on Windows, Mac and Linux. It uses your GPU if you have one (NVIDIA, or 
 
 - A computer with 8 GB of RAM at the very least. 16 GB is better for long movies.
 - Free disk space. A lot. See "Disk space" below before you start a long movie.
-- Miniforge. It is free. Get it here: https://github.com/conda-forge/miniforge
+- Miniforge. It is free. Click the one for your computer and it downloads:
+  - [Windows](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe)
+  - [Mac with an Apple chip (M1, M2, M3, M4...)](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.pkg) · [Mac with an Intel chip](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-x86_64.pkg). Not sure which? Apple menu → About This Mac → Chip.
+  - [Linux](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh) · [Linux on ARM](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh)
+  - Anything else: https://github.com/conda-forge/miniforge
 - An NVIDIA card if you want to train your own model. You do not need one to use the models we provide.
 
 ## Install
 
-1. Install Miniforge. On Windows and Mac, click through the installer and keep the defaults. On Linux, run the file you downloaded in a terminal (`bash Miniforge3-Linux-x86_64.sh`) and answer yes.
+1. Install Miniforge. **On Windows and Mac, click through the installer and keep the defaults.** On Linux, run the file you downloaded in a terminal (`bash Miniforge3-Linux-x86_64.sh`) and answer yes.
 
    **On Linux, also install the system libraries the window needs.** Most Linux installs do not have them, and without them the app stops at the start with "Qt is missing some system libraries". It needs your password once.
 
