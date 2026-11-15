@@ -6,6 +6,37 @@ You give it a movie. It gives you masks, tracks, family trees and tables.
 
 It runs on Windows, Mac and Linux. It uses your GPU if you have one (NVIDIA, or an Apple Silicon Mac). Without a GPU it still works, just slower.
 
+## Quick install
+
+Pick your computer. Four steps, the first start takes a few minutes, and then it opens in seconds. The details are under [Install](#install).
+
+> [!TIP]
+> **Windows**
+> 1. Download [Miniforge](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe) and install it. Keep the defaults.
+> 2. Download [ProTrack3D](https://github.com/ramugautam1/ProTrack3D-v2/archive/refs/heads/main.zip) and unzip it somewhere you will find it again.
+> 3. Double-click `ProTrack3D_app.bat`. If Windows says it protected your PC, press **More info**, then **Run anyway**.
+> 4. In the app, go to **Models** and press **Download published models**.
+
+> [!TIP]
+> **Mac**
+> 1. Download Miniforge for a Mac with an [Apple chip](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.pkg) or an [Intel chip](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-x86_64.pkg) and install it. Keep the defaults. (Which one? Apple menu → About This Mac → Chip.)
+> 2. Download [ProTrack3D](https://github.com/ramugautam1/ProTrack3D-v2/archive/refs/heads/main.zip) and unzip it somewhere you will find it again.
+> 3. Double-click `ProTrack3D_app.command`. If macOS refuses to open it, go to System Settings → Privacy & Security, scroll down and press **Open Anyway**.
+> 4. In the app, go to **Models** and press **Download published models**.
+
+> [!TIP]
+> **Linux** (Ubuntu, Debian, Mint, Pop!_OS; for Fedora see [Install](#install))
+> 1. Download [Miniforge](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh) and install it, answering yes:
+>    ```bash
+>    bash ~/Downloads/Miniforge3-Linux-x86_64.sh
+>    ```
+> 2. Install the libraries the window needs (asks for your password once):
+>    ```bash
+>    sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libegl1
+>    ```
+> 3. Download [ProTrack3D](https://github.com/ramugautam1/ProTrack3D-v2/archive/refs/heads/main.zip), unzip it, and start it from that folder: `./ProTrack3D_app.sh`
+> 4. In the app, go to **Models** and press **Download published models**.
+
 ## What you need
 
 - A computer with 8 GB of RAM at the very least. 16 GB is better for long movies.
