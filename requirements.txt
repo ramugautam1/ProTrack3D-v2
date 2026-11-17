@@ -11,5 +11,8 @@ tifffile==2024.8.30
 opencv-python-headless==4.10.0.84
 connected-components-3d>=3.10.2
 XlsxWriter>=3.0.3
-PySide6>=6.6
+# PySide6 6.12.0 on Linux drops a reference to None on almost every call when Python is older than 3.12, and the
+# window closes with "deallocating None" after a while (seen on Ubuntu 22.04, Python 3.11). 6.11 does not.
+PySide6>=6.6,<6.12; sys_platform == "linux"
+PySide6>=6.6; sys_platform != "linux"
 czifile==2019.7.2.3
